@@ -1279,10 +1279,13 @@ export type InvoiceSubmission = z.infer<typeof InvoiceSubmissionSchema>;
 Create `tests/unit/services/accounting/client.test.ts`:
 ```typescript
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { TransientError, PermanentError } from '../../../../src/lib/errors.js';
 
 vi.mock('axios', () => {
   const mockAxios: any = vi.fn();
   mockAxios.create = vi.fn(() => mockAxios);
+  mockAxios.post = vi.fn();
+  mockAxios.isAxiosError = vi.fn((err: any) => err?.isAxiosError === true);
   return { default: mockAxios };
 });
 
@@ -1293,7 +1296,7 @@ describe('HttpAccountingClient', () => {
 
   it('posts invoice and returns id on success', async () => {
     const axios = (await import('axios')).default as any;
-    axios.mockResolvedValueOnce({ status: 201, data: { id: 'srv-123' } });
+    axios.post.mockResolvedValueOnce({ status: 201, data: { id: 'srv-123' } });
 
     const { HttpAccountingClient } = await import('../../../../src/services/accounting/client.js');
     const client = new HttpAccountingClient({
@@ -1321,13 +1324,13 @@ describe('HttpAccountingClient', () => {
 
   it('throws TransientError on 5xx (will retry)', async () => {
     const axios = (await import('axios')).default as any;
-    axios.mockRejectedValueOnce({
+    axios.post.mockRejectedValueOnce({
       isAxiosError: true,
       response: { status: 500 },
       message: 'server error',
     });
 
-    const { HttpAccountingClient, TransientError } = await import('../../../../src/services/accounting/client.js');
+    const { HttpAccountingClient } = await import('../../../../src/services/accounting/client.js');
     const client = new HttpAccountingClient({
       baseUrl: 'https://api.example.com',
       token: 't',
@@ -1345,13 +1348,13 @@ describe('HttpAccountingClient', () => {
 
   it('throws PermanentError on 4xx (no retry)', async () => {
     const axios = (await import('axios')).default as any;
-    axios.mockRejectedValueOnce({
+    axios.post.mockRejectedValueOnce({
       isAxiosError: true,
       response: { status: 401 },
       message: 'unauthorized',
     });
 
-    const { HttpAccountingClient, PermanentError } = await import('../../../../src/services/accounting/client.js');
+    const { HttpAccountingClient } = await import('../../../../src/services/accounting/client.js');
     const client = new HttpAccountingClient({
       baseUrl: 'https://api.example.com',
       token: 't',
@@ -1369,13 +1372,13 @@ describe('HttpAccountingClient', () => {
 
   it('opens circuit after threshold failures', async () => {
     const axios = (await import('axios')).default as any;
-    axios.mockRejectedValue({
+    axios.post.mockRejectedValue({
       isAxiosError: true,
       response: { status: 500 },
       message: 'fail',
     });
 
-    const { HttpAccountingClient, TransientError } = await import('../../../../src/services/accounting/client.js');
+    const { HttpAccountingClient } = await import('../../../../src/services/accounting/client.js');
     const client = new HttpAccountingClient({
       baseUrl: 'https://api.example.com',
       token: 't',
@@ -1451,7 +1454,9 @@ class CircuitBreaker {
       this.onSuccess();
       return result;
     } catch (err) {
-      this.onFailure();
+      if (err instanceof TransientError) {
+        this.onFailure();
+      }
       throw err;
     }
   }
