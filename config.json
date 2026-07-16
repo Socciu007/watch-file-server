@@ -1,0 +1,30 @@
+{
+  "sources": [
+    { "name": "local-inbox", "path": "./inbox", "enabled": true }
+  ],
+  "watcher": {
+    "debounceMs": 1500,
+    "ignored": [".DS_Store", "Thumbs.db", "*.tmp", "*.crdownload"]
+  },
+  "queues": {
+    "pdf": { "concurrency": 2, "maxRetries": 3 },
+    "image": { "concurrency": 3, "maxRetries": 3 }
+  },
+  "ocr": { "lang": "eng", "binaryPath": null },
+  "parser": { "type": "mock" },
+  "accounting": {
+    "baseUrl": "https://httpbin.org/anything",
+    "authTokenEnv": "ACCOUNTING_API_TOKEN",
+    "timeoutMs": 10000,
+    "circuitBreaker": { "failureThreshold": 5, "resetMs": 60000 }
+  },
+  "metrics": {
+    "endpoint": "https://httpbin.org/anything",
+    "authTokenEnv": "METRICS_PUSH_TOKEN",
+    "flushIntervalMs": 30000
+  },
+  "storage": {
+    "processedDir": "./storage/processed",
+    "failedDir": "./storage/failed"
+  }
+}
