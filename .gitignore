@@ -1,8 +1,10 @@
 node_modules/
 dist/
 .env
-storage/processed/
-storage/failed/
+storage/processed/*
+!storage/processed/.gitkeep
+storage/failed/*
+!storage/failed/.gitkeep
 *.log
 .DS_Store
 coverage/
