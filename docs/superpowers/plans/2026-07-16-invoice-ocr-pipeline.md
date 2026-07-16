@@ -1094,8 +1094,8 @@ Create `src/services/parser/mock.ts`:
 import type { InvoiceParser } from './interface.js';
 import type { FileEvent, InvoiceOutput, InvoiceLineItem } from '../../types/index.js';
 
-const INVOICE_NUMBER_RE = /\bINV[-_]?(\w+)\b/i;
-const TOTAL_RE = /Total[:\s]+\$?([\d,]+\.?\d*)/i;
+const INVOICE_NUMBER_RE = /\bINV[-_]?(\d\w*)\b/i;
+const TOTAL_RE = /\bTotal\b[:\s]+\$?([\d,]+\.?\d*)/i;
 const DATE_RE = /\b(\d{1,2})\/(\d{1,2})\/(\d{4})\b/;
 const VENDOR_RE = /^([A-Z][A-Za-z\s&,.]{2,40})$/m;
 
