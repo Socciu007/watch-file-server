@@ -2224,7 +2224,8 @@ export abstract class BaseWorker {
       this.logger.info({ event: event.path, durationMs: Date.now() - start }, 'Job success');
     } catch (err) {
       const isPermanent = err instanceof PermanentError;
-      await this.deps.metrics.recordJobComplete(type, isPermanent ? 'fail' : 'fail', Date.now() - start);
+      // Both transient and permanent failures are reported as 'fail' status
+      await this.deps.metrics.recordJobComplete(type, 'fail', Date.now() - start);
       this.logger.error({ err, event: event.path }, 'Job failed');
       try {
         await this.moveToFailed(event);
