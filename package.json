@@ -1,0 +1,40 @@
+{
+  "name": "watch-file-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "dev:pdf-only": "WORKER_ROLE=pdf-only npm run dev",
+    "dev:image-only": "WORKER_ROLE=image-only npm run dev",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:integration": "vitest run tests/integration",
+    "lint": "eslint src tests",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "axios": "^1.18.1",
+    "chokidar": "^5.0.0",
+    "dotenv": "^17.4.2",
+    "p-queue": "^9.3.1",
+    "pdf-parse": "^2.4.5",
+    "pino": "^10.3.1",
+    "sharp": "^0.35.3",
+    "tesseract.js": "^7.0.0",
+    "uuid": "^14.0.1",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "@types/uuid": "^10.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.64.0",
+    "@typescript-eslint/parser": "^8.64.0",
+    "eslint": "^10.7.0",
+    "tsx": "^4.23.1",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.10"
+  }
+}
