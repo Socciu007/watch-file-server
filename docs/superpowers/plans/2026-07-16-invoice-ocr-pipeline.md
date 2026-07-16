@@ -1902,8 +1902,11 @@ export function debounceByStability(
     if (existing && existing.timer) clearTimeout(existing.timer);
 
     const timer = setTimeout(() => {
-      handler(path, size);
-      obs.delete(path);
+      try {
+        handler(path, size);
+      } finally {
+        obs.delete(path);
+      }
     }, debounceMs);
 
     obs.set(path, { size, timer });
