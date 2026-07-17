@@ -2534,8 +2534,12 @@ import type { WorkerRole } from './types/index.js';
 
 async function main() {
   const env = loadEnv();
-  const config = loadConfig('./config.json');
+  const configPath = process.env.CONFIG_PATH ?? './config.json';
+  const config = loadConfig(configPath);
   const logger = createLogger(env.LOG_LEVEL).child({ component: 'main' });
+
+  // Cap in-memory dedup Set to prevent unbounded growth on long-running bursts.
+  const MAX_INFLIGHT_DEDUP = 1000;
 
   logger.info('Starting watch-file-server');
 
@@ -2552,7 +2556,7 @@ async function main() {
     baseUrl: config.accounting.baseUrl,
     token: apiToken,
     timeoutMs: config.accounting.timeoutMs,
-    maxRetries: config.queues.pdf.maxRetries,
+    maxRetries: Math.max(config.queues.pdf.maxRetries, config.queues.image.maxRetries),
     circuitBreaker: config.accounting.circuitBreaker,
   });
 
@@ -2591,6 +2595,22 @@ async function main() {
   // Metrics flush interval
   const flushTimer = setInterval(() => void metrics.flush(), config.metrics.flushIntervalMs);
 
+  // Graceful shutdown handler (registered early so signals during startup are caught)
+  const shutdown = async (signal: string) => {
+    logger.info({ signal }, 'Shutting down');
+    clearInterval(flushTimer);
+    if (watcher) await watcher.stop();
+    if (pdfWorker) await pdfWorker.drain();
+    if (imageWorker) await imageWorker.drain();
+    await metrics.flush();
+    await ocrService.terminate?.();
+    logger.info('Shutdown complete');
+    process.exit(0);
+  };
+
+  process.on('SIGINT', () => void shutdown('SIGINT'));
+  process.on('SIGTERM', () => void shutdown('SIGTERM'));
+
   // Watcher (only if at least one worker present)
   let watcher: ChokidarWatchService | undefined;
   if (pdfWorker || imageWorker) {
@@ -2608,6 +2628,11 @@ async function main() {
         return;
       }
       inflight.add(dedupKey);
+      // FIFO eviction if Set grows beyond cap (Sets preserve insertion order)
+      if (inflight.size > MAX_INFLIGHT_DEDUP) {
+        const oldest = inflight.values().next().value;
+        if (oldest !== undefined) inflight.delete(oldest);
+      }
 
       try {
         if (event.extension === '.pdf' && pdfWorker) {
@@ -2625,22 +2650,6 @@ async function main() {
   } else {
     logger.warn('No workers started — running idle');
   }
-
-  // Graceful shutdown
-  const shutdown = async (signal: string) => {
-    logger.info({ signal }, 'Shutting down');
-    clearInterval(flushTimer);
-    if (watcher) await watcher.stop();
-    if (pdfWorker) await pdfWorker.drain();
-    if (imageWorker) await imageWorker.drain();
-    await metrics.flush();
-    await ocrService.terminate?.();
-    logger.info('Shutdown complete');
-    process.exit(0);
-  };
-
-  process.on('SIGINT', () => void shutdown('SIGINT'));
-  process.on('SIGTERM', () => void shutdown('SIGTERM'));
 }
 
 main().catch((err) => {
