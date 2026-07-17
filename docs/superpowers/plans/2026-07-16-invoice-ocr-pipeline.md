@@ -2189,11 +2189,11 @@ export interface BaseWorkerDeps {
   logger: Logger;
 }
 
-export abstract class BaseWorker {
+export abstract class BaseWorker<D extends BaseWorkerDeps = BaseWorkerDeps> {
   protected readonly queue: PQueue;
   protected readonly logger: Logger;
 
-  constructor(protected readonly deps: BaseWorkerDeps, loggerSuffix: string) {
+  constructor(protected readonly deps: D, loggerSuffix: string) {
     this.queue = new PQueue({ concurrency: deps.queueConfig.concurrency });
     this.logger = deps.logger.child({ component: loggerSuffix });
   }
@@ -2301,12 +2301,8 @@ describe('PdfWorker', () => {
     const parser = { parse: vi.fn().mockResolvedValue({ source: 's', sourceFile: 'p', invoiceNumber: 'INV-1', vendorName: null, issueDate: null, totalAmount: null, currency: null, lineItems: [], rawText: 'r', confidence: 1, processedAt: 'now' }) };
     const apiClient = { submit: vi.fn().mockResolvedValue({ id: 'a' }) };
     const metrics = { recordJobComplete: vi.fn(), flush: vi.fn() };
-    const rename = vi.fn().mockResolvedValue(undefined);
-    const existsSync = vi.fn().mockReturnValue(true);
-    const mkdir = vi.fn().mockResolvedValue(undefined);
 
-    vi.doMock('node:fs/promises', () => ({ rename, mkdir }));
-    vi.doMock('node:fs', () => ({ existsSync }));
+    vi.doMock('node:fs/promises', () => ({ rename: vi.fn().mockResolvedValue(undefined) }));
 
     const { PdfWorker } = await import('../../../src/services/workers/pdf.js');
     const worker = new PdfWorker({
@@ -2338,7 +2334,7 @@ describe('PdfWorker', () => {
     const apiClient = { submit: vi.fn().mockResolvedValue({ id: 'a' }) };
     const metrics = { recordJobComplete: vi.fn(), flush: vi.fn() };
 
-    vi.doMock('node:fs/promises', () => ({ rename: vi.fn().mockResolvedValue(undefined), mkdir: vi.fn().mockResolvedValue(undefined) }));
+    vi.doMock('node:fs/promises', () => ({ rename: vi.fn().mockResolvedValue(undefined) }));
 
     const { PdfWorker } = await import('../../../src/services/workers/pdf.js');
     const worker = new PdfWorker({
@@ -2357,6 +2353,7 @@ describe('PdfWorker', () => {
 
     expect(pdfExtractor.extract).toHaveBeenCalled();
     expect(ocrService.extractText).not.toHaveBeenCalled();
+    expect(metrics.recordJobComplete).toHaveBeenCalledWith('pdf', 'success', expect.any(Number));
   });
 });
 ```
@@ -2380,9 +2377,9 @@ export interface PdfWorkerDeps extends BaseWorkerDeps {
 
 const OCR_FALLBACK_THRESHOLD = 50;
 
-export class PdfWorker extends BaseWorker {
-  constructor(private readonly workerDeps: PdfWorkerDeps) {
-    super(workerDeps, 'pdf-worker');
+export class PdfWorker extends BaseWorker<PdfWorkerDeps> {
+  constructor(deps: PdfWorkerDeps) {
+    super(deps, 'pdf-worker');
   }
 
   protected queueType(): 'pdf' | 'image' {
@@ -2390,11 +2387,11 @@ export class PdfWorker extends BaseWorker {
   }
 
   protected async extractText(event: FileEvent): Promise<string> {
-    const text = await this.workerDeps.pdfExtractor.extract(event.path);
+    const text = await this.deps.pdfExtractor.extract(event.path);
     if (text.length >= OCR_FALLBACK_THRESHOLD) return text;
 
     this.logger.warn({ event: event.path, textLen: text.length }, 'PDF text too short, falling back to OCR');
-    const ocrText = await this.workerDeps.ocrService.extractText(event.path);
+    const ocrText = await this.deps.ocrService.extractText(event.path);
     return ocrText;
   }
 }

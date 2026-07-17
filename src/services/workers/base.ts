@@ -21,11 +21,11 @@ export interface BaseWorkerDeps {
   logger: Logger;
 }
 
-export abstract class BaseWorker {
+export abstract class BaseWorker<D extends BaseWorkerDeps = BaseWorkerDeps> {
   protected readonly queue: PQueue;
   protected readonly logger: Logger;
 
-  constructor(protected readonly deps: BaseWorkerDeps, loggerSuffix: string) {
+  constructor(protected readonly deps: D, loggerSuffix: string) {
     this.queue = new PQueue({ concurrency: deps.queueConfig.concurrency });
     this.logger = deps.logger.child({ component: loggerSuffix });
   }
