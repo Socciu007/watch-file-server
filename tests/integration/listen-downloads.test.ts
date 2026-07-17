@@ -54,7 +54,7 @@ describe('listen-downloads integration', () => {
   });
 
   it('startDownloadsWatcher returns a chokidar instance', async () => {
-    const { startDownloadsWatcher } = await import('../../src/index.js');
+    const { startDownloadsWatcher } = await import('../../src/services/watcher/listen-downloads.js');
     const fakeOcr = {
       processImage: vi.fn().mockResolvedValue('IMG_TEXT'),
       processPdf: vi.fn().mockResolvedValue('PDF_TEXT'),
@@ -79,7 +79,7 @@ describe('listen-downloads integration', () => {
   });
 
   it('ignores files with unsupported extensions', async () => {
-    const { startDownloadsWatcher } = await import('../../src/index.js');
+    const { startDownloadsWatcher } = await import('../../src/services/watcher/listen-downloads.js');
     const fakeOcr = {
       processImage: vi.fn(),
       processPdf: vi.fn(),
@@ -104,7 +104,7 @@ describe('listen-downloads integration', () => {
   });
 
   it('processes allowed file: detectKind → ocrByKind → aiExtract → uploadToEb', async () => {
-    const { startDownloadsWatcher } = await import('../../src/index.js');
+    const { startDownloadsWatcher } = await import('../../src/services/watcher/listen-downloads.js');
     const fakeOcr = {
       processImage: vi.fn().mockResolvedValue('OCR_TEXT_CONTENT'),
       processPdf: vi.fn(),
