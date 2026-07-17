@@ -2034,7 +2034,7 @@ import type { SourceConfig, WatcherConfig } from '../../config/schema.js';
 import type { FileEvent } from '../../types/index.js';
 import { debounceByStability } from './debounce.js';
 import { routeFile } from './router.js';
-import { PermanentError, TransientError } from '../../lib/errors.js';
+import { PermanentError } from '../../lib/errors.js';
 
 export interface WatchServiceOptions {
   sources: SourceConfig[];
@@ -2080,7 +2080,10 @@ export class ChokidarWatchService implements WatchService {
     });
 
     this.watcher.on('add', (filePath: string) => {
-      this.debouncedObserve(filePath, () => 0, () => Date.now());
+      this.observeSize(filePath);
+    });
+
+    this.watcher.on('change', (filePath: string) => {
       this.observeSize(filePath);
     });
 
@@ -2102,7 +2105,7 @@ export class ChokidarWatchService implements WatchService {
         const s = await stat(filePath);
         this.debouncedObserve(filePath, () => s.size, () => Date.now());
       } catch (err) {
-        throw new TransientError(`Cannot stat ${filePath}: ${(err as Error).message}`);
+        this.opts.logger.error({ err, path: filePath }, 'Stat failed; will not emit');
       }
     };
     void poll();
@@ -2118,7 +2121,9 @@ export class ChokidarWatchService implements WatchService {
     }
 
     const extension = extname(path).toLowerCase() as FileEvent['extension'];
-    const source = this.opts.sources.find((s) => path.startsWith(s.path))?.name ?? 'unknown';
+    const source = [...this.opts.sources]
+      .sort((a, b) => b.path.length - a.path.length)
+      .find((s) => path.startsWith(s.path))?.name ?? 'unknown';
 
     const event: FileEvent = {
       source,
