@@ -10,7 +10,7 @@ import {
   extractBlNo,
   type AiExtractor,
 } from '../ai/ai-extractor.js';
-import { ChatAllAiExtractor } from '../ai/chatall-extractor.js';
+import { ChatAllAiExtractor } from '../ai/ai-extractor.js';
 import { uploadToEb } from '../upload/upload-to-eb.js';
 
 const logger = createLogger('info').child({ component: 'listen-downloads' });

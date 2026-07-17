@@ -3,7 +3,7 @@ import {
   aiExtract,
   extractBlNo,
   AI_PROMPT,
-  DefaultAiExtractor,
+  ChatAllAiExtractor,
   type AiExtractor,
 } from '../../../../src/services/ai/ai-extractor.js';
 
@@ -37,9 +37,9 @@ describe('aiExtract', () => {
   });
 });
 
-describe('DefaultAiExtractor', () => {
-  it('throws not implemented', async () => {
-    const extractor = new DefaultAiExtractor();
-    await expect(extractor.aiExtractFields('text')).rejects.toThrow(/not implemented/);
+describe('ChatAllAiExtractor class', () => {
+  it('can be constructed with no options (uses env defaults)', () => {
+    const ext = new ChatAllAiExtractor();
+    expect(ext).toBeInstanceOf(ChatAllAiExtractor);
   });
 });
