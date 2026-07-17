@@ -8,9 +8,9 @@ import { TesseractOcrProcessor } from '../ocr/tesseract-processor.js';
 import {
   aiExtract,
   extractBlNo,
-  DefaultAiExtractor,
   type AiExtractor,
 } from '../ai/ai-extractor.js';
+import { ChatAllAiExtractor } from '../ai/chatall-extractor.js';
 import { uploadToEb } from '../upload/upload-to-eb.js';
 
 const logger = createLogger('info').child({ component: 'listen-downloads' });
@@ -43,7 +43,7 @@ export function startDownloadsWatcher(
   opts: StartDownloadsOptions = {},
 ): FSWatcher | undefined {
   const ocr: OcrProcessor = opts.ocr ?? new TesseractOcrProcessor();
-  const ai: AiExtractor = opts.ai ?? new DefaultAiExtractor();
+  const ai: AiExtractor = opts.ai ?? new ChatAllAiExtractor();
   const apiUrl = opts.apiUrl ?? API_URL;
   const watchDir = opts.watchDir ?? WATCH_DIR;
 
@@ -66,7 +66,6 @@ export function startDownloadsWatcher(
       const t0 = Date.now();
       const kind = detectKind(filePath);
       try {
-        console.log('ocrByKind', filePath, kind);
         const ocrText = await ocrByKind(filePath, kind, ocr);
         console.log('ocrText', ocrText);
         const aiResult = await aiExtract(ocrText, ai);
