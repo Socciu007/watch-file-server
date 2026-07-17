@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { startDownloadsWatcher } from './services/watcher/listen-downloads.js';
 
 // Auto-start when run directly (not when imported as a module)
