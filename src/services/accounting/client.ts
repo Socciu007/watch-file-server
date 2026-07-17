@@ -1,6 +1,5 @@
 import axios, { AxiosError } from 'axios';
 import { TransientError, PermanentError } from '../../lib/errors.js';
-import { withRetry } from '../../lib/retry.js';
 import type { InvoiceOutput } from '../../types/index.js';
 
 export interface HttpAccountingClientOptions {
@@ -78,13 +77,7 @@ export class HttpAccountingClient implements AccountingApiClient {
   }
 
   async submit(invoice: InvoiceOutput): Promise<{ id: string }> {
-    return this.breaker.call(() =>
-      withRetry(() => this.postOnce(invoice), {
-        maxRetries: this.maxRetries,
-        baseDelayMs: 1000,
-        shouldRetry: (err) => err instanceof TransientError,
-      })
-    );
+    return this.breaker.call(() => this.postOnce(invoice));
   }
 
   private async postOnce(invoice: InvoiceOutput): Promise<{ id: string }> {

@@ -77,14 +77,36 @@ async function main() {
   const flushTimer = setInterval(() => void metrics.flush(), config.metrics.flushIntervalMs);
 
   // Graceful shutdown handler (registered early so signals during startup are caught)
+  const SHUTDOWN_TIMEOUT_MS = 30_000;
+
+  const withTimeout = async <T>(promise: Promise<T>, label: string): Promise<T | void> => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        promise,
+        new Promise<void>((resolve) => {
+          timer = setTimeout(() => {
+            logger.warn({ label, timeoutMs: SHUTDOWN_TIMEOUT_MS }, 'Shutdown step timed out');
+            resolve();
+          }, SHUTDOWN_TIMEOUT_MS);
+        }),
+      ]);
+    } catch (err) {
+      logger.error({ err, label }, 'Shutdown step failed');
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+    return;
+  };
+
   const shutdown = async (signal: string) => {
     logger.info({ signal }, 'Shutting down');
     clearInterval(flushTimer);
-    if (watcher) await watcher.stop();
-    if (pdfWorker) await pdfWorker.drain();
-    if (imageWorker) await imageWorker.drain();
-    await metrics.flush();
-    await ocrService.terminate?.();
+    if (watcher) await withTimeout(watcher.stop(), 'watcher.stop');
+    if (pdfWorker) await withTimeout(pdfWorker.drain(), 'pdfWorker.drain');
+    if (imageWorker) await withTimeout(imageWorker.drain(), 'imageWorker.drain');
+    await withTimeout(metrics.flush(), 'metrics.flush');
+    await withTimeout(Promise.resolve(ocrService.terminate?.()), 'ocrService.terminate');
     logger.info('Shutdown complete');
     process.exit(0);
   };

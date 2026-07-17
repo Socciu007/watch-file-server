@@ -29,7 +29,7 @@ watch-file-server/
 │   │   ├── ocr/{interface.ts, tesseract.ts}
 │   │   ├── parser/{interface.ts, mock.ts}
 │   │   ├── pdf-text/extractor.ts
-│   │   ├── accounting/{client.ts, schema.ts}
+│   │   ├── accounting/{client.ts}
 │   │   └── metrics/{interface.ts, prometheus.ts}
 │   ├── lib/{logger.ts, hash.ts, retry.ts, errors.ts}
 │   └── types/index.ts
@@ -1249,32 +1249,12 @@ git commit -m "feat(pdf-text): add PdfTextExtractor (pdf-parse wrapper)"
 ## Task 15: AccountingApiClient (with circuit breaker)
 
 **Files:**
-- Create: `src/services/accounting/schema.ts`
 - Create: `src/services/accounting/client.ts`
 - Test: `tests/unit/services/accounting/client.test.ts`
 
-- [ ] **Step 1: Write the InvoiceOutput submission schema**
+> **Note (post-review):** A `src/services/accounting/schema.ts` zod schema was originally created alongside the client. It was never wired into any code path (dead code) and was removed after review. Retry responsibility also moved out of the client — see updated Step 4 below.
 
-Create `src/services/accounting/schema.ts`:
-```typescript
-import { z } from 'zod';
-
-export const InvoiceSubmissionSchema = z.object({
-  source: z.string(),
-  sourceFile: z.string(),
-  invoiceNumber: z.string().nullable(),
-  vendorName: z.string().nullable(),
-  issueDate: z.string().nullable(),
-  totalAmount: z.number().nullable(),
-  currency: z.string().nullable(),
-  lineItems: z.array(z.object({ description: z.string(), amount: z.number() })),
-  processedAt: z.string(),
-});
-
-export type InvoiceSubmission = z.infer<typeof InvoiceSubmissionSchema>;
-```
-
-- [ ] **Step 2: Write failing test for client**
+- [ ] **Step 1: Write failing test for client**
 
 Create `tests/unit/services/accounting/client.test.ts`:
 ```typescript
@@ -1409,18 +1389,18 @@ Expected: FAIL with "Cannot find module".
 
 - [ ] **Step 4: Implement HttpAccountingClient**
 
+> **Post-review update:** `withRetry` was removed from `HttpAccountingClient.submit`. The worker (`BaseWorker.handle`) already retries the whole submit call with `queueConfig.maxRetries`. Having retry at both layers caused up to 16 attempts per transient failure (4 worker attempts × 4 client attempts). The circuit breaker remains as the right client-layer resilience mechanism — it prevents hammering a known-down upstream between worker retry attempts.
+
 Create `src/services/accounting/client.ts`:
 ```typescript
 import axios, { AxiosError } from 'axios';
 import { TransientError, PermanentError } from '../../lib/errors.js';
-import { withRetry } from '../../lib/retry.js';
 import type { InvoiceOutput } from '../../types/index.js';
 
 export interface HttpAccountingClientOptions {
   baseUrl: string;
   token: string;
   timeoutMs: number;
-  maxRetries: number;
   circuitBreaker: { failureThreshold: number; resetMs: number };
 }
 
@@ -1478,7 +1458,6 @@ class CircuitBreaker {
 export class HttpAccountingClient implements AccountingApiClient {
   private readonly http;
   private readonly breaker: CircuitBreaker;
-  private readonly maxRetries: number;
 
   constructor(opts: HttpAccountingClientOptions) {
     this.http = axios.create({
@@ -1487,17 +1466,10 @@ export class HttpAccountingClient implements AccountingApiClient {
       headers: { Authorization: `Bearer ${opts.token}` },
     });
     this.breaker = new CircuitBreaker(opts.circuitBreaker.failureThreshold, opts.circuitBreaker.resetMs);
-    this.maxRetries = opts.maxRetries;
   }
 
   async submit(invoice: InvoiceOutput): Promise<{ id: string }> {
-    return this.breaker.call(() =>
-      withRetry(() => this.postOnce(invoice), {
-        maxRetries: this.maxRetries,
-        baseDelayMs: 1000,
-        shouldRetry: (err) => err instanceof TransientError,
-      })
-    );
+    return this.breaker.call(() => this.postOnce(invoice));
   }
 
   private async postOnce(invoice: InvoiceOutput): Promise<{ id: string }> {
@@ -2596,14 +2568,37 @@ async function main() {
   const flushTimer = setInterval(() => void metrics.flush(), config.metrics.flushIntervalMs);
 
   // Graceful shutdown handler (registered early so signals during startup are caught)
+  // Each step is bounded by SHUTDOWN_TIMEOUT_MS so a hung worker can't block process exit.
+  const SHUTDOWN_TIMEOUT_MS = 30_000;
+
+  const withTimeout = async <T>(promise: Promise<T>, label: string): Promise<T | void> => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        promise,
+        new Promise<void>((resolve) => {
+          timer = setTimeout(() => {
+            logger.warn({ label, timeoutMs: SHUTDOWN_TIMEOUT_MS }, 'Shutdown step timed out');
+            resolve();
+          }, SHUTDOWN_TIMEOUT_MS);
+        }),
+      ]);
+    } catch (err) {
+      logger.error({ err, label }, 'Shutdown step failed');
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+    return;
+  };
+
   const shutdown = async (signal: string) => {
     logger.info({ signal }, 'Shutting down');
     clearInterval(flushTimer);
-    if (watcher) await watcher.stop();
-    if (pdfWorker) await pdfWorker.drain();
-    if (imageWorker) await imageWorker.drain();
-    await metrics.flush();
-    await ocrService.terminate?.();
+    if (watcher) await withTimeout(watcher.stop(), 'watcher.stop');
+    if (pdfWorker) await withTimeout(pdfWorker.drain(), 'pdfWorker.drain');
+    if (imageWorker) await withTimeout(imageWorker.drain(), 'imageWorker.drain');
+    await withTimeout(metrics.flush(), 'metrics.flush');
+    await withTimeout(Promise.resolve(ocrService.terminate?.()), 'ocrService.terminate');
     logger.info('Shutdown complete');
     process.exit(0);
   };
