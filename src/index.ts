@@ -7,9 +7,8 @@ const isMain =
 if (isMain) {
   const watcher = startDownloadsWatcher();
   const shutdown = (signal: string) => {
-    // eslint-disable-next-line no-console
     console.log(`[main] Shutting down (${signal})`);
-    void watcher.close().then(() => process.exit(0));
+    void watcher?.close().then(() => process.exit(0));
   };
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));

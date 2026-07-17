@@ -3,10 +3,8 @@ import chokidar, { type FSWatcher } from 'chokidar';
 import { createLogger } from '../../lib/logger.js';
 import { isAllowedFile } from '../../lib/allowed-extensions.js';
 import { detectKind, ocrByKind } from '../ocr/ocr-by-kind.js';
-import {
-  DefaultOcrProcessor,
-  type OcrProcessor,
-} from '../ocr/ocr-processor.js';
+import { type OcrProcessor } from '../ocr/ocr-processor.js';
+import { TesseractOcrProcessor } from '../ocr/tesseract-processor.js';
 import {
   aiExtract,
   extractBlNo,
@@ -17,8 +15,8 @@ import { uploadToEb } from '../upload/upload-to-eb.js';
 
 const logger = createLogger('info').child({ component: 'listen-downloads' });
 
-const WATCH_DIR = process.env.WATCH_DIR ?? 'C:/Users/Administrator/Downloads';
-const API_URL = process.env.API_URL ?? 'http://localhost:3001/vn/file';
+const WATCH_DIR = process.env.WATCH_DIR || '';
+const API_URL = process.env.API_URL || '';
 const UPLOAD_TIMEOUT_MS = 60_000;
 
 /**
@@ -43,13 +41,15 @@ export interface StartDownloadsOptions {
  */
 export function startDownloadsWatcher(
   opts: StartDownloadsOptions = {},
-): FSWatcher {
-  const ocr: OcrProcessor = opts.ocr ?? new DefaultOcrProcessor();
+): FSWatcher | undefined {
+  const ocr: OcrProcessor = opts.ocr ?? new TesseractOcrProcessor();
   const ai: AiExtractor = opts.ai ?? new DefaultAiExtractor();
   const apiUrl = opts.apiUrl ?? API_URL;
   const watchDir = opts.watchDir ?? WATCH_DIR;
 
-  logger.info({ watchDir, apiUrl }, '[Listen file] watching');
+  if (!watchDir) return;
+
+  logger.info({ watchDir, apiUrl }, 'Listen file watching:');
 
   const watcher = chokidar.watch(watchDir, {
     ignored: /(^|[\\/])\../, // ignore dotfiles
@@ -66,8 +66,11 @@ export function startDownloadsWatcher(
       const t0 = Date.now();
       const kind = detectKind(filePath);
       try {
+        console.log('ocrByKind', filePath, kind);
         const ocrText = await ocrByKind(filePath, kind, ocr);
+        console.log('ocrText', ocrText);
         const aiResult = await aiExtract(ocrText, ai);
+        console.log('aiResult', aiResult);
         const blNo = extractBlNo(aiResult);
 
         let upload: { status: number; body: unknown } | null = null;
@@ -102,7 +105,7 @@ export function startDownloadsWatcher(
         const message = err instanceof Error ? err.message : String(err);
         logger.error(
           { file: filePath, kind, message },
-          '[Listen file] error action',
+          'Listen file error action:',
         );
       }
     }).catch(() => {
@@ -111,7 +114,7 @@ export function startDownloadsWatcher(
   });
 
   watcher.on('error', (err: unknown) => {
-    logger.error({ err }, '[Listen file] watcher error');
+    logger.error({ err }, 'Listen file watcher error:');
   });
 
   return watcher;
