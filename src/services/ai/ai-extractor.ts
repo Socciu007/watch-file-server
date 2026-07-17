@@ -5,10 +5,9 @@ import axios from 'axios';
 //  Expected body: { prompt: string | { content: string } }
 // =============================================================================
 
-const AI_API_URL =
-  process.env.AI_API_URL || 'http://ai.dadaex.cn/backapi/chatGpt/chatAll';
-const AI_MODEL_TYPE = process.env.AI_MODEL_TYPE || '2';
-const AI_MODE_NAME = process.env.AI_MODE_NAME || 'gemini-3.5-flash';
+const AI_API_URL = 'http://ai.dadaex.cn/backapi/chatGpt/chatAll';
+const AI_MODEL_TYPE = '2'; // 1: gpt-4o, 2: gemini-3.5-flash
+const AI_MODE_NAME = 'gemini-3.5-flash'; // gemini-3.5-flash, gpt-4o
 
 export interface AiExtractor {
   aiExtractFields(ocrText: string): Promise<Record<string, unknown>>;
@@ -19,7 +18,7 @@ export interface AiExtractor {
  * (even if the model includes markdown ```json ... ``` or extra text).
  */
 export function extractJson(text: string): Record<string, unknown> {
-  if (!text) throw new Error('AI trả về response rỗng');
+  if (!text) throw new Error('AI returned empty response');
 
   // Try to parse directly first
   try {
@@ -58,7 +57,7 @@ export function extractJson(text: string): Record<string, unknown> {
     }
   }
 
-  throw new Error(`Không parse được JSON từ response: ${text.slice(0, 200)}`);
+  throw new Error(`Cannot parse JSON from response: ${text.slice(0, 200)}`);
 }
 
 /**
@@ -83,11 +82,10 @@ export function pickAiText(payload: unknown): string {
   return '';
 }
 
-export interface ChatAllOptions {
+export interface ChatAIOptions {
   apiUrl?: string;
   modelType?: string;
   modeName?: string;
-  /** Override for testing — provide a custom axios instance. */
   axiosOverride?: typeof axios;
 }
 
@@ -98,7 +96,7 @@ export interface ChatAllOptions {
  */
 export async function aiExtractFields(
   promptText: string,
-  opts: ChatAllOptions = {},
+  opts: ChatAIOptions = {},
 ): Promise<Record<string, unknown>> {
   const ax = opts.axiosOverride ?? axios;
   const url = opts.apiUrl ?? AI_API_URL;
@@ -121,51 +119,6 @@ export async function aiExtractFields(
   // Try the known shape (resp.data.data.res1.kwargs.content) first, then
   // fall back to the generic pickAiText walker for other backend versions.
   let text = pickAiText(resp.data?.data?.res1?.kwargs?.content);
-  if (!text) {
-    text = pickAiText(resp.data);
-  }
+  if (!text) text = pickAiText(resp.data);
   return extractJson(text);
-}
-
-/**
- * AiExtractor implementation that calls the internal chatAll API.
- * Use this as the default `ai` option in startDownloadsWatcher().
- */
-export class ChatAllAiExtractor implements AiExtractor {
-  constructor(private readonly opts: ChatAllOptions = {}) {}
-
-  async aiExtractFields(promptText: string): Promise<Record<string, unknown>> {
-    return aiExtractFields(promptText, this.opts);
-  }
-}
-
-// =============================================================================
-//  Higher-level helpers used by the watcher pipeline
-// =============================================================================
-
-/**
- * Prompt suffix appended to OCR text before sending to the AI.
- * Asks the AI to extract the B/L number and return `{ blNo: string }`.
- */
-export const AI_PROMPT =
-  '. Hãy lấy thông tin số B\\L No và trả về dạng {blNo: string}.';
-
-/**
- * High-level helper: run AI extraction with the standard blNo prompt.
- * Returns the parsed object (whatever the AI extractor returned).
- */
-export async function aiExtract(
-  ocrText: string,
-  ai: AiExtractor,
-): Promise<Record<string, unknown>> {
-  return ai.aiExtractFields(ocrText + AI_PROMPT);
-}
-
-/**
- * Type-safe accessor for the blNo field the AI extractor is expected to return.
- * Returns '' if missing or wrong type.
- */
-export function extractBlNo(ai: Record<string, unknown>): string {
-  const v = ai.blNo;
-  return typeof v === 'string' ? v.trim() : '';
 }

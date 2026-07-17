@@ -3,21 +3,35 @@ import chokidar, { type FSWatcher } from 'chokidar';
 import { createLogger } from '../../lib/logger.js';
 import { isAllowedFile } from '../../lib/allowed-extensions.js';
 import { detectKind, ocrByKind } from '../ocr/ocr-by-kind.js';
-import { type OcrProcessor } from '../ocr/ocr-processor.js';
-import { TesseractOcrProcessor } from '../ocr/tesseract-processor.js';
-import {
-  aiExtract,
-  extractBlNo,
-  type AiExtractor,
-} from '../ai/ai-extractor.js';
-import { ChatAllAiExtractor } from '../ai/ai-extractor.js';
-import { uploadToEb } from '../upload/upload-to-eb.js';
+import { type OcrProcessor, TesseractOcrProcessor } from '../ocr/ocr-processor.js';
+import { aiExtractFields } from '../ai/ai-extractor.js';
+import fs from 'node:fs';
+import axios from 'axios';
+import FormData from 'form-data';
 
 const logger = createLogger('info').child({ component: 'listen-downloads' });
-
 const WATCH_DIR = process.env.WATCH_DIR || '';
+const AI_PROMPT = '. Hãy lấy thông tin số B\\L No và trả về dạng {blNo: string}.';
 const API_URL = process.env.API_URL || '';
 const UPLOAD_TIMEOUT_MS = 60_000;
+
+// Upload the file to another server
+export const uploadToEb = async (
+  filePath: string,
+  blNo: string,
+): Promise<{ status: number; body: unknown }> => {
+  const form = new FormData();
+  form.append('file', fs.createReadStream(filePath));
+  form.append('blNo', blNo || '');
+
+  const resp = await axios.post(API_URL, form, {
+    headers: form.getHeaders(),
+    maxBodyLength: Infinity,
+    maxContentLength: Infinity,
+    timeout: 60_000,
+  });
+  return { status: resp.status, body: resp.data };
+};
 
 /**
  * Serial queue: each enqueued file waits for the previous to settle before running.
@@ -26,24 +40,16 @@ const UPLOAD_TIMEOUT_MS = 60_000;
 let queue: Promise<void> = Promise.resolve();
 
 export interface StartDownloadsOptions {
-  /** Override the OCR processor (e.g. wire in a tesseract.js impl in production). */
-  ocr?: OcrProcessor;
-  /** Override the AI extractor (e.g. wire in a real LLM client). */
-  ai?: AiExtractor;
-  /** Override the API URL. */
-  apiUrl?: string;
-  /** Override the watch directory. */
-  watchDir?: string;
+  ocr?: OcrProcessor; // Override the OCR processor (e.g. wire in a tesseract.js impl in production).
+  apiUrl?: string; // Override the API UPLOAD FILE to another server
+  watchDir?: string; // Override the watch directory
 }
 
-/**
- * Start the downloads watcher. Returns the chokidar FSWatcher so callers can close it on shutdown.
- */
+// Handler the watcher for the file in the watch directory
 export function startDownloadsWatcher(
   opts: StartDownloadsOptions = {},
 ): FSWatcher | undefined {
   const ocr: OcrProcessor = opts.ocr ?? new TesseractOcrProcessor();
-  const ai: AiExtractor = opts.ai ?? new ChatAllAiExtractor();
   const apiUrl = opts.apiUrl ?? API_URL;
   const watchDir = opts.watchDir ?? WATCH_DIR;
 
@@ -67,19 +73,14 @@ export function startDownloadsWatcher(
       const kind = detectKind(filePath);
       try {
         const ocrText = await ocrByKind(filePath, kind, ocr);
-        console.log('ocrText', ocrText);
-        const aiResult = await aiExtract(ocrText, ai);
+        const aiResult = await aiExtractFields(ocrText + AI_PROMPT);
         console.log('aiResult', aiResult);
-        const blNo = extractBlNo(aiResult);
 
         let upload: { status: number; body: unknown } | null = null;
         let uploadError: string | null = null;
-        if (blNo) {
+        if (aiResult && aiResult?.blNo) {
           try {
-            upload = await uploadToEb(filePath, blNo, {
-              apiUrl,
-              timeoutMs: UPLOAD_TIMEOUT_MS,
-            });
+            upload = await uploadToEb(filePath, aiResult?.blNo as string);
             logger.info({ upload }, 'Upload');
           } catch (upErr: unknown) {
             uploadError = upErr instanceof Error ? upErr.message : String(upErr);
@@ -98,7 +99,7 @@ export function startDownloadsWatcher(
             uploadError,
             durationMs: Date.now() - t0,
           },
-          '[Listen file] action',
+          'Listen file action:',
         );
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
@@ -107,9 +108,7 @@ export function startDownloadsWatcher(
           'Listen file error action:',
         );
       }
-    }).catch(() => {
-      /* swallow — error already logged above */
-    });
+    }).catch(() => {});
   });
 
   watcher.on('error', (err: unknown) => {
