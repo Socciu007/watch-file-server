@@ -13,10 +13,10 @@ const logger = createLogger('info').child({ component: 'listen-downloads' });
 const WATCH_DIR = process.env.WATCH_DIR || '';
 const AI_PROMPT = '. Hãy lấy thông tin số B\\L No và trả về dạng {blNo: string}.';
 const API_URL = process.env.API_URL || '';
-const UPLOAD_TIMEOUT_MS = 60_000;
 
 // Upload the file to another server
 export const uploadToEb = async (
+  apiUrl: string,
   filePath: string,
   blNo: string,
 ): Promise<{ status: number; body: unknown }> => {
@@ -24,7 +24,7 @@ export const uploadToEb = async (
   form.append('file', fs.createReadStream(filePath));
   form.append('blNo', blNo || '');
 
-  const resp = await axios.post(API_URL, form, {
+  const resp = await axios.post(apiUrl, form, {
     headers: form.getHeaders(),
     maxBodyLength: Infinity,
     maxContentLength: Infinity,
@@ -80,8 +80,8 @@ export function startDownloadsWatcher(
         let uploadError: string | null = null;
         if (aiResult && aiResult?.blNo) {
           try {
-            upload = await uploadToEb(filePath, aiResult?.blNo as string);
-            logger.info({ upload }, 'Upload');
+            upload = await uploadToEb(apiUrl, filePath, aiResult?.blNo as string);
+            console.log('uploadToEb', upload);
           } catch (upErr: unknown) {
             uploadError = upErr instanceof Error ? upErr.message : String(upErr);
           }
@@ -93,9 +93,9 @@ export function startDownloadsWatcher(
             fullPath: filePath,
             kind,
             ocrLength: ocrText.length,
-            ocrText: ocrText.slice(0, 500),
-            ai: aiResult,
-            upload: upload ? { status: upload.status, body: upload.body } : null,
+            // ocrText: ocrText.slice(0, 500),
+            ai: aiResult?.blNo,
+            // upload: upload ? { status: upload.status, body: upload.body } : null,
             uploadError,
             durationMs: Date.now() - t0,
           },
