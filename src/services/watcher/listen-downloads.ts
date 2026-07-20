@@ -8,6 +8,7 @@ import { aiExtractFields } from '../ai/ai-extractor.js';
 import {
   sendMailBestEffort,
   type MailService,
+  HttpMailService
 } from '../mail/send-mail.js';
 import fs from 'node:fs';
 import axios from 'axios';
@@ -17,11 +18,11 @@ const logger = createLogger('info').child({ component: 'listen-downloads' });
 const WATCH_DIR = process.env.WATCH_DIR || '';
 const AI_PROMPT = '. Hãy lấy thông tin số B\\L No và trả về dạng {blNo: string}.';
 const API_URL = process.env.API_URL || '';
-const MAIL_TO = process.env.MAIL_TO || '904288354@qq.com';
+const MAIL_TO = process.env.MAIL_TO || 'manhtien310701@gmail.com';
 
 // Upload the file to another server
 export const uploadToEb = async (
-  apiUrl: string,
+  apiUpload: string,
   filePath: string,
   blNo: string,
 ): Promise<{ status: number; body: unknown }> => {
@@ -29,7 +30,7 @@ export const uploadToEb = async (
   form.append('file', fs.createReadStream(filePath));
   form.append('blNo', blNo || '');
 
-  const resp = await axios.post(apiUrl, form, {
+  const resp = await axios.post(apiUpload, form, {
     headers: form.getHeaders(),
     maxBodyLength: Infinity,
     maxContentLength: Infinity,
@@ -46,7 +47,7 @@ let queue: Promise<void> = Promise.resolve();
 
 export interface StartDownloadsOptions {
   ocr?: OcrProcessor; // Override the OCR processor (e.g. wire in a tesseract.js impl in production).
-  apiUrl?: string; // Override the API UPLOAD FILE to another server
+  apiUpload?: string; // Override the API UPLOAD FILE to another server
   watchDir?: string; // Override the watch directory
   mail?: MailService; // Optional — if provided, sends notifications on errors and on successful upload.
   mailTo?: string; // Optional override for mail recipient.
@@ -56,14 +57,14 @@ export function startDownloadsWatcher(
   opts: StartDownloadsOptions = {},
 ): FSWatcher | undefined {
   const ocr: OcrProcessor = opts.ocr ?? new TesseractOcrProcessor();
-  const apiUrl = opts.apiUrl ?? API_URL;
+  const apiUpload = opts.apiUpload ?? API_URL;
   const watchDir = opts.watchDir ?? WATCH_DIR;
   const mail = opts.mail;
   const mailTo = opts.mailTo ?? MAIL_TO;
 
   if (!watchDir) return;
 
-  logger.info({ watchDir, apiUrl, mailTo: mail ? mailTo : '(disabled)' }, 'Listen file watching:');
+  logger.info({ watchDir, apiUpload }, 'Listen file watching:');
 
   const watcher = chokidar.watch(watchDir, {
     ignored: /(^|[\\/])\../, // ignore dotfiles
@@ -81,22 +82,20 @@ export function startDownloadsWatcher(
       const kind = detectKind(filePath);
       const baseName = path.basename(filePath);
 
-      // ---------- Step 1: OCR ----------
       let ocrText = '';
       try {
         ocrText = await ocrByKind(filePath, kind, ocr);
       } catch (ocrErr: unknown) {
         const msg = ocrErr instanceof Error ? ocrErr.message : String(ocrErr);
-        logger.error({ file: filePath, kind, message: msg }, 'OCR failed:');
+        logger.error({ file: filePath, message: msg }, 'OCR failed:');
         await sendMailBestEffort(mail, {
-          subject: `[OCR FAIL] ${baseName}`,
-          text: `OCR failed for ${filePath} (${kind}): ${msg}`,
+          subject: `[FILE] ${baseName}`,
+          text: `OCR failed for ${filePath}: ${msg}`,
           to: mailTo,
         });
         return;
       }
 
-      // ---------- Step 2: AI ----------
       let aiResult: Record<string, unknown> | null = null;
       try {
         aiResult = await aiExtractFields(ocrText + AI_PROMPT);
@@ -104,40 +103,35 @@ export function startDownloadsWatcher(
         const msg = aiErr instanceof Error ? aiErr.message : String(aiErr);
         logger.error({ file: filePath, message: msg }, 'AI extract failed:');
         await sendMailBestEffort(mail, {
-          subject: `[AI FAIL] ${baseName}`,
+          subject: `[FILE] ${baseName}`,
           text: `AI extract failed for ${filePath}: ${msg}\n\nOCR preview:\n${ocrText.slice(0, 500)}`,
           to: mailTo,
         });
         return;
       }
 
-      console.log('aiResult', aiResult);
-
-      // ---------- Step 3: Upload ----------
       let upload: { status: number; body: unknown } | null = null;
       let uploadError: string | null = null;
       const blNo = typeof aiResult?.blNo === 'string' ? (aiResult.blNo as string) : '';
-
       if (blNo) {
         try {
-          upload = await uploadToEb(apiUrl, filePath, blNo);
+          upload = await uploadToEb(apiUpload, filePath, blNo);
           console.log('uploadToEb', upload);
         } catch (upErr: unknown) {
           uploadError = upErr instanceof Error ? upErr.message : String(upErr);
           logger.error({ file: filePath, blNo, message: uploadError }, 'Upload failed:');
           await sendMailBestEffort(mail, {
-            subject: `[UPLOAD FAIL] [${blNo}]-${baseName}`,
+            subject: `[FILE] ${baseName}`,
             text: `Upload failed for ${filePath} (blNo=${blNo}): ${uploadError}`,
             to: mailTo,
           });
         }
       }
 
-      // ---------- Step 4: Success notification ----------
       if (blNo && upload && !uploadError) {
         await sendMailBestEffort(mail, {
-          subject: `[${blNo}]-EB`,
-          text: `${blNo}: filled trailer company on EB system.`,
+          subject: `[FILE] ${baseName}`,
+          text: `$Upload file ${filePath} with (blNo=${blNo}) successfully.`,
           to: mailTo,
         });
       }
