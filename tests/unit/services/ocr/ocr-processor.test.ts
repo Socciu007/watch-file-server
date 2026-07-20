@@ -49,7 +49,7 @@ describe('TesseractOcrProcessor', () => {
 
   it('processImage: calls createWorker, recognize, then terminate', async () => {
     const { TesseractOcrProcessor } = await import(
-      '../../../../src/services/ocr/tesseract-processor.js'
+      '../../../../src/services/ocr/ocr-processor.js'
     );
     const proc = new TesseractOcrProcessor();
     const result = await proc.processImage('/x/invoice.png');
@@ -67,7 +67,7 @@ describe('TesseractOcrProcessor', () => {
     }));
 
     const { TesseractOcrProcessor } = await import(
-      '../../../../src/services/ocr/tesseract-processor.js'
+      '../../../../src/services/ocr/ocr-processor.js'
     );
     const proc = new TesseractOcrProcessor();
 
@@ -85,7 +85,7 @@ describe('TesseractOcrProcessor', () => {
     );
 
     const { TesseractOcrProcessor } = await import(
-      '../../../../src/services/ocr/tesseract-processor.js'
+      '../../../../src/services/ocr/ocr-processor.js'
     );
     const proc = new TesseractOcrProcessor();
     const result = await proc.processPdf('/x/invoice.pdf');
@@ -104,7 +104,7 @@ describe('TesseractOcrProcessor', () => {
     );
 
     const { TesseractOcrProcessor } = await import(
-      '../../../../src/services/ocr/tesseract-processor.js'
+      '../../../../src/services/ocr/ocr-processor.js'
     );
     const proc = new TesseractOcrProcessor();
 
@@ -115,7 +115,7 @@ describe('TesseractOcrProcessor', () => {
     fakeMammoth.extractRawText.mockResolvedValueOnce({ value: '  Hello DOCX  \n' });
 
     const { TesseractOcrProcessor } = await import(
-      '../../../../src/services/ocr/tesseract-processor.js'
+      '../../../../src/services/ocr/ocr-processor.js'
     );
     const proc = new TesseractOcrProcessor();
     const result = await proc.processDocx('/x/doc.docx');
@@ -126,7 +126,7 @@ describe('TesseractOcrProcessor', () => {
 
   it('uses custom lang option', async () => {
     const { TesseractOcrProcessor } = await import(
-      '../../../../src/services/ocr/tesseract-processor.js'
+      '../../../../src/services/ocr/ocr-processor.js'
     );
     const proc = new TesseractOcrProcessor({ lang: 'fra' });
     await proc.processImage('/x/invoice.png');

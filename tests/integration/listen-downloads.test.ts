@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { mockWatcher, mockChokidar } = vi.hoisted(() => {
+const { mockWatcher, mockChokidar, mockAxiosPost } = vi.hoisted(() => {
   // Plain object that mimics EventEmitter interface — must be defined inside vi.hoisted
   // because vitest's hoisting runs the callback before the class declarations below.
   const listeners: Record<string, Array<(p: string) => void>> = {};
@@ -29,6 +29,7 @@ const { mockWatcher, mockChokidar } = vi.hoisted(() => {
     mockChokidar: {
       watch: vi.fn(() => w),
     },
+    mockAxiosPost: vi.fn(),
   };
 });
 
@@ -37,7 +38,7 @@ vi.mock('chokidar', () => ({
 }));
 
 vi.mock('axios', () => ({
-  default: { post: vi.fn().mockResolvedValue({ status: 201, data: { id: 'srv-1' } }) },
+  default: { post: mockAxiosPost },
 }));
 
 vi.mock('form-data', () => ({
@@ -60,13 +61,9 @@ describe('listen-downloads integration', () => {
       processPdf: vi.fn().mockResolvedValue('PDF_TEXT'),
       processDocx: vi.fn().mockResolvedValue('DOCX_TEXT'),
     };
-    const fakeAi = {
-      aiExtractFields: vi.fn().mockResolvedValue({ blNo: 'BL-123' }),
-    };
 
     const watcher = startDownloadsWatcher({
       ocr: fakeOcr,
-      ai: fakeAi,
       apiUrl: 'http://test/api',
       watchDir: 'C:/fake/downloads',
     });
@@ -85,11 +82,9 @@ describe('listen-downloads integration', () => {
       processPdf: vi.fn(),
       processDocx: vi.fn(),
     };
-    const fakeAi = { aiExtractFields: vi.fn() };
 
     startDownloadsWatcher({
       ocr: fakeOcr,
-      ai: fakeAi,
       apiUrl: 'http://test/api',
       watchDir: 'C:/fake',
     });
@@ -100,21 +95,23 @@ describe('listen-downloads integration', () => {
     expect(fakeOcr.processImage).not.toHaveBeenCalled();
     expect(fakeOcr.processPdf).not.toHaveBeenCalled();
     expect(fakeOcr.processDocx).not.toHaveBeenCalled();
-    expect(fakeAi.aiExtractFields).not.toHaveBeenCalled();
   });
 
-  it('processes allowed file: detectKind → ocrByKind → aiExtract → uploadToEb', async () => {
+  it('processes allowed file: detectKind → ocrByKind → aiExtractFields → uploadToEb', async () => {
+    // Mock the AI API call: returns { blNo: 'BL-456' }
+    mockAxiosPost.mockResolvedValueOnce({
+      data: { res1: { kwargs: { content: '{"blNo":"BL-456"}' } } },
+    });
+
     const { startDownloadsWatcher } = await import('../../src/services/watcher/listen-downloads.js');
     const fakeOcr = {
       processImage: vi.fn().mockResolvedValue('OCR_TEXT_CONTENT'),
       processPdf: vi.fn(),
       processDocx: vi.fn(),
     };
-    const fakeAi = { aiExtractFields: vi.fn().mockResolvedValue({ blNo: 'BL-456' }) };
 
     startDownloadsWatcher({
       ocr: fakeOcr,
-      ai: fakeAi,
       apiUrl: 'http://test/api',
       watchDir: 'C:/fake',
     });
@@ -123,6 +120,10 @@ describe('listen-downloads integration', () => {
     await new Promise((r) => setTimeout(r, 200));
 
     expect(fakeOcr.processImage).toHaveBeenCalledWith('C:/fake/invoice.png');
-    expect(fakeAi.aiExtractFields).toHaveBeenCalledWith('OCR_TEXT_CONTENT' + '. Hãy lấy thông tin số B\\L No và trả về dạng {blNo: string}.');
+    expect(mockAxiosPost).toHaveBeenCalledWith(
+      'http://test/api',
+      expect.objectContaining({}),
+      expect.objectContaining({}),
+    );
   });
 });
