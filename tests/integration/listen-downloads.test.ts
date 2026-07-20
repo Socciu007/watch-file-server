@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { mockWatcher, mockChokidar, mockAxiosPost } = vi.hoisted(() => {
+const { mockWatcher, mockChokidar, mockAxiosPost, mockMail } = vi.hoisted(() => {
   // Plain object that mimics EventEmitter interface — must be defined inside vi.hoisted
   // because vitest's hoisting runs the callback before the class declarations below.
   const listeners: Record<string, Array<(p: string) => void>> = {};
@@ -30,6 +30,7 @@ const { mockWatcher, mockChokidar, mockAxiosPost } = vi.hoisted(() => {
       watch: vi.fn(() => w),
     },
     mockAxiosPost: vi.fn(),
+    mockMail: { send: vi.fn().mockResolvedValue(undefined) },
   };
 });
 
@@ -65,6 +66,7 @@ describe('listen-downloads integration', () => {
     const watcher = startDownloadsWatcher({
       ocr: fakeOcr,
       apiUpload: 'http://test/api',
+      mail: mockMail,
       watchDir: 'C:/fake/downloads',
     });
 
@@ -86,6 +88,7 @@ describe('listen-downloads integration', () => {
     startDownloadsWatcher({
       ocr: fakeOcr,
       apiUpload: 'http://test/api',
+      mail: mockMail,
       watchDir: 'C:/fake',
     });
 
@@ -118,6 +121,7 @@ describe('listen-downloads integration', () => {
     startDownloadsWatcher({
       ocr: fakeOcr,
       apiUpload: 'http://test/upload',
+      mail: mockMail,
       watchDir: 'C:/fake',
     });
 

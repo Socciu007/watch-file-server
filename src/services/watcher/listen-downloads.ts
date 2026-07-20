@@ -5,7 +5,7 @@ import { isAllowedFile } from '../../lib/allowed-extensions.js';
 import { detectKind, ocrByKind } from '../ocr/ocr-by-kind.js';
 import { type OcrProcessor, TesseractOcrProcessor } from '../ocr/ocr-processor.js';
 import { aiExtractFields } from '../ai/ai-extractor.js';
-import { type MailService } from '../mail/send-mail.js';
+import { HttpMailService, type MailService } from '../mail/send-mail.js';
 import fs from 'node:fs';
 import axios from 'axios';
 import FormData from 'form-data';
@@ -14,6 +14,7 @@ const logger = createLogger('info').child({ component: 'listen-downloads' });
 const WATCH_DIR = process.env.WATCH_DIR || '';
 const AI_PROMPT = '. Hãy lấy thông tin số B\\L No và trả về dạng {blNo: string}.';
 const API_URL = process.env.API_URL || '';
+const MAIL_API_URL = process.env.MAIL_API_URL || 'https://vn2.dadaex.cn/api/moneyapi/mail';
 const MAIL_TO = process.env.MAIL_TO || 'manhtien310701@gmail.com';
 
 // Upload the file to another server
@@ -45,7 +46,10 @@ export interface StartDownloadsOptions {
   ocr?: OcrProcessor; // Override the OCR processor (e.g. wire in a tesseract.js impl in production).
   apiUpload?: string; // Override the API UPLOAD FILE to another server
   watchDir?: string; // Override the watch directory
-  mail?: MailService; // Optional — if provided, sends notifications on errors and on successful upload.
+  /** Provide a custom MailService. If not provided, a default HttpMailService is auto-constructed using `mailApiUrl`. */
+  mail?: MailService;
+  /** Override the default mail API URL (default: MAIL_API_URL env or https://vn2.dadaex.cn/api/moneyapi/mail). */
+  mailApiUrl?: string;
   mailTo?: string; // Optional override for mail recipient.
 }
 
@@ -55,8 +59,8 @@ export function startDownloadsWatcher(
   const ocr: OcrProcessor = opts.ocr ?? new TesseractOcrProcessor();
   const apiUpload = opts.apiUpload ?? API_URL;
   const watchDir = opts.watchDir ?? WATCH_DIR;
-  const mail = opts.mail;
   const mailTo = opts.mailTo ?? MAIL_TO;
+  const mail: MailService = opts.mail ?? new HttpMailService({ apiUrl: opts.mailApiUrl ?? MAIL_API_URL });
 
   if (!watchDir) return;
 
@@ -84,7 +88,7 @@ export function startDownloadsWatcher(
       } catch (ocrErr: unknown) {
         const msg = ocrErr instanceof Error ? ocrErr.message : String(ocrErr);
         logger.error({ file: filePath, message: msg }, 'OCR failed:');
-        await mail?.send({
+        await mail.send({
           subject: `[FILE] ${baseName}`,
           text: `OCR failed for ${filePath}: ${msg}`,
           to: mailTo,
@@ -98,7 +102,7 @@ export function startDownloadsWatcher(
       } catch (aiErr: unknown) {
         const msg = aiErr instanceof Error ? aiErr.message : String(aiErr);
         logger.error({ file: filePath, message: msg }, 'AI extract failed:');
-        await mail?.send({
+        await mail.send({
           subject: `[FILE] ${baseName}`,
           text: `AI extract failed for ${filePath}: ${msg}\n\nOCR preview:\n${ocrText.slice(0, 500)}`,
           to: mailTo,
@@ -116,7 +120,7 @@ export function startDownloadsWatcher(
         } catch (upErr: unknown) {
           uploadError = upErr instanceof Error ? upErr.message : String(upErr);
           logger.error({ file: filePath, blNo, message: uploadError }, 'Upload failed:');
-          await mail?.send({
+          await mail.send({
             subject: `[FILE] ${baseName}`,
             text: `Upload failed for ${filePath} (blNo=${blNo}): ${uploadError}`,
             to: mailTo,
@@ -125,7 +129,8 @@ export function startDownloadsWatcher(
       }
 
       if (blNo && upload && !uploadError) {
-        await mail?.send({
+        logger.info({ file: baseName, blNo }, 'Upload file successfully:');
+        await mail.send({
           subject: `[FILE] ${baseName}`,
           text: `$Upload file ${filePath} with (blNo=${blNo}) successfully.`,
           to: mailTo,
