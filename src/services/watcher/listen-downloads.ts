@@ -5,11 +5,7 @@ import { isAllowedFile } from '../../lib/allowed-extensions.js';
 import { detectKind, ocrByKind } from '../ocr/ocr-by-kind.js';
 import { type OcrProcessor, TesseractOcrProcessor } from '../ocr/ocr-processor.js';
 import { aiExtractFields } from '../ai/ai-extractor.js';
-import {
-  sendMailBestEffort,
-  type MailService,
-  HttpMailService
-} from '../mail/send-mail.js';
+import { type MailService } from '../mail/send-mail.js';
 import fs from 'node:fs';
 import axios from 'axios';
 import FormData from 'form-data';
@@ -88,7 +84,7 @@ export function startDownloadsWatcher(
       } catch (ocrErr: unknown) {
         const msg = ocrErr instanceof Error ? ocrErr.message : String(ocrErr);
         logger.error({ file: filePath, message: msg }, 'OCR failed:');
-        await sendMailBestEffort(mail, {
+        await mail?.send({
           subject: `[FILE] ${baseName}`,
           text: `OCR failed for ${filePath}: ${msg}`,
           to: mailTo,
@@ -102,7 +98,7 @@ export function startDownloadsWatcher(
       } catch (aiErr: unknown) {
         const msg = aiErr instanceof Error ? aiErr.message : String(aiErr);
         logger.error({ file: filePath, message: msg }, 'AI extract failed:');
-        await sendMailBestEffort(mail, {
+        await mail?.send({
           subject: `[FILE] ${baseName}`,
           text: `AI extract failed for ${filePath}: ${msg}\n\nOCR preview:\n${ocrText.slice(0, 500)}`,
           to: mailTo,
@@ -120,7 +116,7 @@ export function startDownloadsWatcher(
         } catch (upErr: unknown) {
           uploadError = upErr instanceof Error ? upErr.message : String(upErr);
           logger.error({ file: filePath, blNo, message: uploadError }, 'Upload failed:');
-          await sendMailBestEffort(mail, {
+          await mail?.send({
             subject: `[FILE] ${baseName}`,
             text: `Upload failed for ${filePath} (blNo=${blNo}): ${uploadError}`,
             to: mailTo,
@@ -129,7 +125,7 @@ export function startDownloadsWatcher(
       }
 
       if (blNo && upload && !uploadError) {
-        await sendMailBestEffort(mail, {
+        await mail?.send({
           subject: `[FILE] ${baseName}`,
           text: `$Upload file ${filePath} with (blNo=${blNo}) successfully.`,
           to: mailTo,

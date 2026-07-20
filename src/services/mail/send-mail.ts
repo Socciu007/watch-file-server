@@ -1,11 +1,7 @@
 import axios, { type AxiosInstance } from 'axios';
 
 /**
- * Mail notification interface.
- *
- * The default implementation `HttpMailService` POSTs to the internal mail API
- * (https://vn2.dadaex.cn/api/moneyapi/mail). Production should inject a real
- * impl; tests can pass a mock that satisfies the same shape.
+ * Mail notification options.
  */
 export interface MailOptions {
   subject: string;
@@ -13,6 +9,14 @@ export interface MailOptions {
   to: string;
 }
 
+/**
+ * Mail notification interface.
+ *
+ * `send()` is **best-effort**: it never throws. Failures (network, auth,
+ * 5xx, …) are silently swallowed because notifications must not break the
+ * processing pipeline. If you need to observe failures, inject a custom
+ * MailService implementation that records them.
+ */
 export interface MailService {
   send(opts: MailOptions): Promise<void>;
 }
@@ -33,27 +37,14 @@ export class HttpMailService implements MailService {
   }
 
   async send(opts: MailOptions): Promise<void> {
-    await this.http.post(this.apiUrl, {
-      subject: opts.subject,
-      text: opts.text,
-      to: opts.to,
-    });
-  }
-}
-
-/**
- * Fire-and-forget wrapper: sends a mail but never throws or blocks the caller.
- * Errors are swallowed silently (logged by the caller if needed).
- * Use this when mail is a notification, not a hard dependency.
- */
-export async function sendMailBestEffort(
-  mail: MailService | undefined,
-  opts: MailOptions,
-): Promise<void> {
-  if (!mail) return;
-  try {
-    await mail.send(opts);
-  } catch {
-    /* swallow — best-effort notification */
+    try {
+      await this.http.post(this.apiUrl, {
+        subject: opts.subject,
+        text: opts.text,
+        to: opts.to,
+      });
+    } catch {
+      /* best-effort: swallow */
+    }
   }
 }

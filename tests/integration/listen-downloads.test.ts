@@ -64,7 +64,7 @@ describe('listen-downloads integration', () => {
 
     const watcher = startDownloadsWatcher({
       ocr: fakeOcr,
-      apiUrl: 'http://test/api',
+      apiUpload: 'http://test/api',
       watchDir: 'C:/fake/downloads',
     });
 
@@ -85,7 +85,7 @@ describe('listen-downloads integration', () => {
 
     startDownloadsWatcher({
       ocr: fakeOcr,
-      apiUrl: 'http://test/api',
+      apiUpload: 'http://test/api',
       watchDir: 'C:/fake',
     });
 
@@ -98,9 +98,14 @@ describe('listen-downloads integration', () => {
   });
 
   it('processes allowed file: detectKind → ocrByKind → aiExtractFields → uploadToEb', async () => {
-    // Mock the AI API call: returns { blNo: 'BL-456' }
+    // First call: AI API — returns { blNo: 'BL-456' }
     mockAxiosPost.mockResolvedValueOnce({
       data: { res1: { kwargs: { content: '{"blNo":"BL-456"}' } } },
+    });
+    // Second call: upload API
+    mockAxiosPost.mockResolvedValueOnce({
+      status: 201,
+      data: { id: 'srv-1' },
     });
 
     const { startDownloadsWatcher } = await import('../../src/services/watcher/listen-downloads.js');
@@ -112,16 +117,16 @@ describe('listen-downloads integration', () => {
 
     startDownloadsWatcher({
       ocr: fakeOcr,
-      apiUrl: 'http://test/api',
+      apiUpload: 'http://test/upload',
       watchDir: 'C:/fake',
     });
 
     mockWatcher.emit('add', 'C:/fake/invoice.png');
-    await new Promise((r) => setTimeout(r, 200));
+    await new Promise((r) => setTimeout(r, 500));
 
     expect(fakeOcr.processImage).toHaveBeenCalledWith('C:/fake/invoice.png');
     expect(mockAxiosPost).toHaveBeenCalledWith(
-      'http://test/api',
+      'http://test/upload',
       expect.objectContaining({}),
       expect.objectContaining({}),
     );

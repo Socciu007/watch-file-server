@@ -32,50 +32,33 @@ describe('HttpMailService', () => {
     );
   });
 
-  it('propagates axios errors', async () => {
+  it('swallows errors silently (best-effort: never throws)', async () => {
     mockAxiosInstance.post.mockRejectedValueOnce(new Error('Network error'));
 
     const { HttpMailService } = await import(
       '../../../../src/services/mail/send-mail.js'
     );
     const mail = new HttpMailService({ apiUrl: 'https://x' });
+    // Should not throw — that's the whole point of best-effort
     await expect(
       mail.send({ subject: 's', text: 't', to: 'a' }),
-    ).rejects.toThrow('Network error');
-  });
-});
-
-describe('sendMailBestEffort', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('returns silently if mail is undefined (disabled)', async () => {
-    const { sendMailBestEffort } = await import(
-      '../../../../src/services/mail/send-mail.js'
-    );
-    await expect(
-      sendMailBestEffort(undefined, { subject: 's', text: 't', to: 'a' }),
-    ).resolves.toBeUndefined();
-    expect(mockAxiosInstance.post).not.toHaveBeenCalled();
-  });
-
-  it('swallows mail.send errors (does not throw)', async () => {
-    const send = vi.fn().mockRejectedValue(new Error('mail failed'));
-    const { sendMailBestEffort } = await import(
-      '../../../../src/services/mail/send-mail.js'
-    );
-    await expect(
-      sendMailBestEffort({ send }, { subject: 's', text: 't', to: 'a' }),
     ).resolves.toBeUndefined();
   });
 
-  it('calls mail.send with the given options on success', async () => {
-    const send = vi.fn().mockResolvedValue(undefined);
-    const { sendMailBestEffort } = await import(
+  it('returns void on success and on failure', async () => {
+    const { HttpMailService } = await import(
       '../../../../src/services/mail/send-mail.js'
     );
-    await sendMailBestEffort({ send }, { subject: 'S', text: 'T', to: 'x' });
-    expect(send).toHaveBeenCalledWith({ subject: 'S', text: 'T', to: 'x' });
+    const mail = new HttpMailService({ apiUrl: 'https://x' });
+
+    mockAxiosInstance.post.mockResolvedValueOnce({});
+    expect(
+      await mail.send({ subject: 's', text: 't', to: 'a' }),
+    ).toBeUndefined();
+
+    mockAxiosInstance.post.mockRejectedValueOnce(new Error('oops'));
+    expect(
+      await mail.send({ subject: 's', text: 't', to: 'a' }),
+    ).toBeUndefined();
   });
 });
