@@ -122,7 +122,6 @@ export function startDownloadsWatcher(
       if (blNo) {
         try {
           upload = await uploadToEb(apiUpload, filePath, blNo);
-          console.log('uploadToEb', upload);
         } catch (upErr: unknown) {
           uploadError = upErr instanceof Error ? upErr.message : String(upErr);
           logger.error({ file: filePath, blNo, message: uploadError }, 'Upload failed:');
