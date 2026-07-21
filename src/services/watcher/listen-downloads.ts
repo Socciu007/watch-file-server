@@ -48,8 +48,6 @@ export interface StartDownloadsOptions {
   watchDir?: string; // Override the watch directory
   /** Provide a custom MailService. If not provided, a default HttpMailService is auto-constructed using `mailApiUrl`. */
   mail?: MailService;
-  /** Override the default mail API URL (default: MAIL_API_URL env or https://vn2.dadaex.cn/api/moneyapi/mail). */
-  mailApiUrl?: string;
   mailTo?: string; // Optional override for mail recipient.
 }
 
@@ -60,7 +58,7 @@ export function startDownloadsWatcher(
   const apiUpload = opts.apiUpload ?? API_URL;
   const watchDir = opts.watchDir ?? WATCH_DIR;
   const mailTo = opts.mailTo ?? MAIL_TO;
-  const mail: MailService = opts.mail ?? new HttpMailService({ apiUrl: opts.mailApiUrl ?? MAIL_API_URL });
+  const mail: MailService = opts.mail ?? new HttpMailService({ apiUrl: MAIL_API_URL });
 
   if (!watchDir) return;
 
@@ -110,7 +108,7 @@ export function startDownloadsWatcher(
         return;
       }
 
-      let upload: { status: number; body: unknown } | null = null;
+      let upload: { status: number; body: any } | null = null;
       let uploadError: string | null = null;
       const blNo = typeof aiResult?.blNo === 'string' ? (aiResult.blNo as string) : '';
       if (blNo) {
@@ -132,7 +130,7 @@ export function startDownloadsWatcher(
         logger.info({ file: baseName, blNo }, 'Upload file successfully:');
         await mail.send({
           subject: `[FILE] ${baseName}`,
-          text: `$Upload file ${filePath} with (blNo=${blNo}) successfully.`,
+          text: `Upload file ${baseName} with (blNo=${blNo}): ${upload?.body?.message}`,
           to: mailTo,
         });
       }
