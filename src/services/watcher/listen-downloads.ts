@@ -16,13 +16,21 @@ const AI_PROMPT = '. Hãy lấy thông tin số B\\L No và trả về dạng {b
 const API_URL = process.env.API_URL || '';
 const MAIL_API_URL = process.env.MAIL_API_URL || 'https://vn2.dadaex.cn/api/moneyapi/mail';
 const MAIL_TO = process.env.MAIL_TO || 'manhtien310701@gmail.com';
+// Upload response schema — kept loose so we can display the full object
+// (with all its server-defined fields) in the console without `any`.
+export interface UploadResponse {
+  id?: string;
+  message?: string;
+  status?: string | number;
+  [key: string]: unknown;
+}
 
 // Upload the file to another server
 export const uploadToEb = async (
   apiUpload: string,
   filePath: string,
   blNo: string,
-): Promise<{ status: number; body: unknown }> => {
+): Promise<{ status: number; body: UploadResponse }> => {
   const form = new FormData();
   form.append('file', fs.createReadStream(filePath));
   form.append('blNo', blNo || '');
@@ -33,7 +41,7 @@ export const uploadToEb = async (
     maxContentLength: Infinity,
     timeout: 60_000,
   });
-  return { status: resp.status, body: resp.data };
+  return { status: resp.status, body: resp.data as UploadResponse };
 };
 
 /**
@@ -108,7 +116,7 @@ export function startDownloadsWatcher(
         return;
       }
 
-      let upload: { status: number; body: any } | null = null;
+      let upload: { status: number; body: UploadResponse } | null = null;
       let uploadError: string | null = null;
       const blNo = typeof aiResult?.blNo === 'string' ? (aiResult.blNo as string) : '';
       if (blNo) {
@@ -142,7 +150,7 @@ export function startDownloadsWatcher(
           kind,
           ocrLength: ocrText.length,
           ai: aiResult?.blNo,
-          upload: upload ? { status: upload.status } : null,
+          upload: upload ? { status: upload.status, body: upload.body } : null,
           uploadError,
           durationMs: Date.now() - t0,
         },
