@@ -70,12 +70,22 @@ function colorizeLine(line: string): string {
 
   let out = parts.join(' ');
   if (typeof obj.msg === 'string' && obj.msg.length < 60) {
-    // Append scalar fields only for short messages; long ones are usually
-    // already-formatted multi-field lines that shouldn't be appended to.
+    // Append all top-level fields (scalars AND objects) so the user can see
+    // the full structured log on a single line. Object values are JSON-stringified.
     const extras: string[] = [];
     for (const [k, v] of Object.entries(obj)) {
       if (['level', 'time', 'pid', 'component', 'msg', 'service'].includes(k)) continue;
-      if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
+      if (v === null || v === undefined) continue;
+      if (typeof v === 'object') {
+        try {
+          const json = JSON.stringify(v);
+          // Truncate long nested objects to keep the line readable.
+          const truncated = json.length > 200 ? json.slice(0, 197) + '…' : json;
+          extras.push(`${TIMESTAMP_COLOR}${k}${RESET}=${truncated}`);
+        } catch {
+          /* skip non-serializable */
+        }
+      } else {
         extras.push(`${TIMESTAMP_COLOR}${k}${RESET}=${v}`);
       }
     }
