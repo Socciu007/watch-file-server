@@ -135,7 +135,6 @@ export function startDownloadsWatcher(
       }
 
       if (blNo && upload && !uploadError) {
-        logger.info({ file: baseName, blNo }, 'Upload file successfully:');
         await mail.send({
           subject: `[FILE] ${baseName}`,
           text: `Upload file ${baseName} with (blNo=${blNo}): ${upload?.body?.message}`,
@@ -149,8 +148,8 @@ export function startDownloadsWatcher(
           fullPath: filePath,
           kind,
           ocrLength: ocrText.length,
-          ai: aiResult?.blNo,
-          upload: upload ? { status: upload.status, body: upload.body } : null,
+          ai: aiResult,
+          upload: upload ? upload.body.message : null,
           uploadError,
           durationMs: Date.now() - t0,
         },
