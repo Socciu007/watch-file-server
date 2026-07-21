@@ -142,7 +142,7 @@ export function startDownloadsWatcher(
           kind,
           ocrLength: ocrText.length,
           ai: aiResult?.blNo,
-          upload: upload ? { status: upload.status, body: upload.body } : null,
+          upload: upload ? { status: upload.status } : null,
           uploadError,
           durationMs: Date.now() - t0,
         },
