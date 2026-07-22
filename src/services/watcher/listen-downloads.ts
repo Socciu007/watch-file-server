@@ -15,7 +15,7 @@ const WATCH_DIR = process.env.WATCH_DIR || '';
 const AI_PROMPT = '. Hãy lấy thông tin số B\\L No và trả về dạng {blNo: string}.';
 const API_URL = process.env.API_URL || '';
 const MAIL_API_URL = process.env.MAIL_API_URL || 'https://vn2.dadaex.cn/api/moneyapi/mail';
-const MAIL_TO = process.env.MAIL_TO || 'manhtien310701@gmail.com';
+const MAIL_TO = process.env.MAIL_TO || '904288354@qq.com';
 // Upload response schema — kept loose so we can display the full object
 // (with all its server-defined fields) in the console without `any`.
 export interface UploadResponse {
