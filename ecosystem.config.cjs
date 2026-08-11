@@ -1,5 +1,12 @@
 // PM2 ecosystem file for watch-file-server.
 //
+// Why this file is .cjs (not .js):
+//   The project's package.json declares `"type": "module"`, which makes every
+//   `.js` file an ES module — so plain `module.exports = {...}` in this file
+//   throws `ReferenceError: module is not defined`. PM2 loads this file with
+//   `require()`, which only works with CommonJS. Renaming to `.cjs` forces
+//   Node to treat it as CommonJS regardless of the package.json `type`.
+//
 // Why this exists:
 //   Running `npm start` in a plain shell dies the moment the terminal closes
 //   or the machine reboots. PM2 keeps the app alive across crashes AND across
@@ -14,7 +21,7 @@
 //   npm run build
 //
 //   # 3. Start the app under PM2 (uses THIS file)
-//   pm2 start ecosystem.config.js
+//   pm2 start ecosystem.config.cjs
 //   # … or use the shortcut: npm run pm2:start
 //
 //   # 4. Snapshot the running process list so PM2 can restore it after reboot
