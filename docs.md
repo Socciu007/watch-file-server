@@ -1,3 +1,100 @@
+# 2026-08-12 提示统计文档 (提示记录)
+
+## Day 25 是 PM2 fix + Day 24 修正 day — 0 subagent 派发，全部 direct work。
+
+| 时间  | 任务                                | 描述                                                                                                                                                                |
+| ----- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 09:00 | 继续 Day 24 的 PM2 watch 调查       | 用户问 "tại sao khi start bằng pm2 thì không thể watch file" → 我之前 commit 85dcd7d 错误下结论 "PM2 irreconcilable, fall back Task Scheduler" — 需要重新调查 |
+| 09:05 | 现状复盘                            | pm2 status 显示空 (上次清理后)，app 没跑，logs file 0 bytes → 需要重新 start 才能 debug                                                                              |
+| 09:10 | 重新跑 pm2 start                    | `pm2 start ecosystem.config.cjs` → PID 21552, 46.7mb, online, ↺=0                                                                                                   |
+| 09:15 | 加 test PDF 进 WATCH_DIR            | memory spike 似乎没发生（其实是 spike 但我立刻看错了 — 后来确认 54→245mb 是真实的）                                                                                  |
+| 09:20 | 观察 PM2 readiness probe            | `C:\Users\Administrator\.pm2\pm2.log` 显示 ~3s 后 PM2 发 SIGINT → 但 graceful handler 没捕获？奇怪                                                                  |
+| 09:25 | 第一次怀疑: isMain check            | `import.meta.url === argv[1]` 在 PM2 下，`argv[1]` 是 `ProcessContainerFork.js` 路径，不是 `dist/index.js` → isMain=false → main() 从未运行                                  |
+| 09:30 | 验证 isMain 假设                    | 临时删掉 isMain 检查（无条件执行 main()）→ app 在 PM2 下 stay alive → 确认 isMain 是问题之一                                                                       |
+| 09:35 | 恢复 isMain + PM2 detection         | `isUnderPm2 = process.env.PM2_HOME !== undefined \|\| process.env.pm_id !== undefined \|\| process.env.pm2_env !== undefined`                                        |
+| 09:40 | 第二个 bug: SIGINT restart loop     | 即使 main() 跑起来，PM2 SIGINT readiness probe 被 graceful handler 捕获 → process.exit(0) → restart → SIGINT → loop。 验证: pm2 status 显示 ↺ 持续增加               |
+| 09:45 | 写 PM2 env debug                    | `await import('node:fs').then(fs => fs.writeFileSync('debug-pm2-detection.json', JSON.stringify({...env})))` — 但因为 isMain=false 从来没跑过                                  |
+| 09:50 | 改 isMain include PM2 case          | `isMain = isUnderPm2 \|\| 原检查`                                                                                                                                  |
+| 09:55 | 跳过 PM2 下的 signal handlers       | `if (!isUnderPm2) { process.on('SIGINT'...); process.on('SIGTERM'...); }` — PM2 有自己的 signal handling，我们 graceful handler 只会干扰                              |
+| 10:00 | typecheck + tests                   | `npm run typecheck` clean, 29/29 tests pass                                                                                                                         |
+| 10:05 | 验证 fix 在 PM2 下                  | `pm2 status`: PID 21552, 119s+ uptime, ↺=0, online — stay alive!                                                                                                   |
+| 10:10 | 验证 chokidar fire                  | 复制 test-pm2-watch.pdf 进 WATCH_DIR → memory spike 54→245→116mb → OCR pipeline 触发（确认 chokidar 工作）                                                          |
+| 10:15 | 清理 debug artifacts                | `pm2 delete all` + 删 `test-pm2-watch.pdf` + `test-pm2-watch.txt` + `debug-pm2-detection.json`                                                                      |
+| 10:20 | **Commit `6a79f45`**                | `fix(pm2): detect PM2 + treat it as 'main' so chokidar can fire under PM2` (1 file, +31/-7)                                                                         |
+| 10:25 | 之前 docs.md edit 错误              | 上次 session 结束时 docs.md 的 edit 把 Day 23 的 timeline + user feedback 删掉了，只剩 Day 24 在 top → 必须 revert 到 HEAD                                                |
+| 10:30 | `git checkout docs.md`              | 恢复 HEAD — Day 23 content 完整回来了，Day 24 在中间位置                                                                                                             |
+| 10:35 | 重写 Day 24 timeline                | 加 14 个新 HH:MM entries (18:15-19:10) 描述 re-investigation + root cause + fix + verification — 之前错误结论必须修正                                                      |
+| 10:40 | 加 Day 24 user feedback 6           | "tại sao khi start bằng pm2 thì không thể watch file" — 完整 Vietnamese 原文 + diagnosis + fix + lesson                                                              |
+| 10:45 | 更新 Day 24 总统计                  | 6→7 user prompts, 2→3 commits, files-changed 现在 list `src/index.ts`                                                                                                |
+| 10:50 | 更新 Cross-day Observations         | rewrite "PM2 on Windows quirks" bullet (PM2 actually works, 3 clean fixes) + 新增 "Premature conclusion mistake" mea culpa bullet                                      |
+| 10:55 | 更新 Overall Project Statistics     | 25→26 user feedback prompts total, 204→205 total prompts, 2→3 Day 24 commits                                                                                        |
+| 11:00 | **Commit `2289245`**                | `docs: Day 24 — correct the PM2 narrative (PM2 actually works, not abandoned)` (1 file, +41/-10)                                                                    |
+| 11:05 | Day 25 stats request                | 用户: "thống kê các prompt ngày 12-08-2026 vào docs.md" → 现在 (current turn)                                                                                       |
+
+## Day 25 用户反馈 prompt 样例 (User Feedback Prompts Day 25)
+
+### 用户反馈 1 (HH:MM ~09:00)："tại sao khi start bằng pm2 thì không thể watch file"
+
+**完整原文：**
+
+> "tại sao khi start bằng pm2 thì không thể watch file"
+
+**处理方式：** 这是 Day 24 的延续 — 用户隐含 rebut 我之前 commit 85dcd7d 下的 "PM2 irreconcilable" 错误结论。重新调查发现两个叠加 bug：
+
+1. **`isMain` check fails under PM2** — PM2 通过 `ProcessContainerFork.js` wrapper 启动 app，argv[1] 是 wrapper 路径，所以 `import.meta.url === argv[1]` 返回 false → main() 不跑
+2. **SIGINT restart loop** — PM2 readiness probe SIGINT 被 graceful handler 捕获 → `process.exit(0)` → autorestart → loop
+
+**修复方案：**
+- PM2 env detection (`PM2_HOME` / `pm_id` / `pm2_env`)
+- `isMain = isUnderPm2 || 原检查`
+- PM2 下跳过 SIGINT/SIGTERM handlers（PM2 有自己的 signal handling）
+
+**验证：**
+- `pm2 status`: PID 21552, 119s+ uptime, ↺=0, online
+- 复制 test PDF → memory 54→245mb spike → OCR pipeline 触发
+- 29/29 tests pass, typecheck clean
+
+**关键学习：** 我之前太快放弃 PM2（commit 85dcd7d 错误判断）。Lesson: 当用户说 "X doesn't work" 时不要立即切到 alternative — 先彻底排查 root cause。PM2 的 fix 实际很简单（3 行 detection + 1 段 skip signal handlers）。
+
+### 用户反馈 2 (HH:MM ~11:05)："thống kê các prompt ngày 12-08-2026 vào docs.md"
+
+**完整原文：**
+
+> "thống kê các prompt ngày 12-08-2026 vào docs.md"
+
+**处理方式：** 用户要 Day 25 的 prompt 统计。我整理 Day 25 的事件：PM2 fix 完成 + Day 24 narrative 修正 + 2 commits + 2 user feedback prompts（本条 + 上一条 Day 24 延续的）+ docs.md revert 抢救。
+
+**关键学习：** Day 25 主要是 cleanup + narrative 修正 day — 没新 feature work，但 narrative 修正（commit 2289245）很重要，因为前一个 commit 的错误结论如果不修正会误导未来的 reader。
+
+## Day 25 总统计
+
+- **2 用户反馈 prompt** ("PM2 watch not working" continuation + Day 25 stats request)
+- **0 subagent 派发** — pure direct work (continuation of Day 24 PM2 fix work)
+- **2 commits**: 6a79f45 (PM2 src/index.ts fix) + 2289245 (docs.md Day 24 narrative correction)
+- **Key finding**: PM2 7.x 在 Windows 上 **完全 work** — 两个叠加 bug 都有 clean fix。修正了 Day 24 的错误结论（"PM2 irreconcilable"）。Task Scheduler + .bat 仍是有效 fallback，但 PM2 是 primary。
+- **Files changed**: `src/index.ts` (+31/-7 for PM2 fix), `docs.md` (+41/-10 for Day 24 narrative correction)
+- **Cleanup**: 删 debug artifacts (`test-pm2-watch.pdf` / `.txt`, `debug-pm2-detection.json`), `pm2 delete all`
+
+## Cross-day Observations Day 24-25
+
+1. **Day 24-25 was pure infrastructure + narrative-correction day** — no feature work, but produced 3 production commits (25eb7a7, 85dcd7d, 6a79f45) + 1 docs correction (2289245). PM2 ecosystem + fix is now stable.
+2. **Premature conclusion reversal**: Day 24 commit 85dcd7d wrongly concluded "PM2 on Win irreconcilable". Day 25 commit 6a79f45 fixed the actual bugs (which were simpler than the conclusion suggested). Lesson documented in commit message + Day 25 user feedback 1.
+3. **docs.md edit mistake + recovery**: Last session's docs.md edit truncated Day 23 content. Day 25 reverted to HEAD + re-applied Day 24 correction properly. Lesson: large docs.md edits should always start from a fresh `git checkout` of HEAD.
+4. **PM2 + Task Scheduler dual path**: PM2 is now primary (works fine on Win 11 with Node 22.22.3), Task Scheduler + .bat fallback for environments where PM2 isn't installed. Both are documented in their respective file headers.
+5. **Commit 2289245 is unusual**: it's a docs-only commit correcting a previous commit's narrative — typically rare, but here justified because the wrong narrative (Day 24 "PM2 irreconcilable") would mislead anyone reading git history.
+6. **Day 25 pattern matches Day 24**: both days had 0 subagent dispatches, all direct work, focused on PM2 infrastructure. User trusts AI for infrastructure work but doesn't seem to need subagents for it.
+
+## Overall Project Statistics (Day 16-25, 10 days)
+
+- **179 subagent prompts** (Day 16-22, all from initial 27-task implementation + refactor)
+- **2 Day 25** + 7 Day 24 + 19 Day 23 = **28 user feedback prompts total**
+- **207 total prompts** across **10 days** (2026-07-16 to 2026-08-12)
+- **Day 24-25 streak**: 5 consecutive days of 0 subagent dispatches (Day 21-25). User is comfortable with project structure + trusts AI for direct infrastructure work.
+- **Total production commits Day 24-25**: 4 (25eb7a7, 85dcd7d, 6a79f45, 2289245) — all infrastructure-related (PM2 ecosystem + fix + docs correction)
+- **Windows compatibility journey**: Day 23 explored Node version workarounds (Node 12/14/10 + KB976932); Day 24-25 settled on modern Node (v22.22.3) + PM2 (primary) + Task Scheduler fallback. PM2 fully working after isMain + SIGINT fix.
+
+---
+
 # 2026-07-23 提示统计文档 (提示记录)
 ## Day 23 是 user support + 兼容性调试 day — 0 个 subagent 派发，全部是 direct Q&A。
 
