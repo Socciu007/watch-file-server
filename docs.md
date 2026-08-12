@@ -106,6 +106,18 @@
 | 18:00 | typecheck pass | `tsc --noEmit` clean |
 | 18:05 | **Commit `85dcd7d`** | `chore(pm2): rename to .cjs + add Task Scheduler fallback for Win` (3 files, +62/-2) |
 | 18:10 | Day 24 stats request | 用户: "hãy thống kê prompt ngày 11-08-1026 vào docs.md"（"1026" 是 typo cho "2026"） |
+| 18:15 | **回滚 Day 24 错误结论** | 之前写的 "PM2 on Win irreconcilable, fall back to Task Scheduler" 结论错了 — 用户问 "tại sao khi start bằng pm2 thì không thể watch file" 表明 PM2 watch 还没工作 |
+| 18:20 | 深入调查 PM2 watch 不工作 | `pm2 status` 显示 online 但 ↺ 持续增加 → restart loop |
+| 18:25 | 发现 isMain bug | `import.meta.url === argv[1]` 在 PM2 下返回 false — 因为 PM2 通过 `ProcessContainerFork.js` wrapper 运行 app，所以 argv[1] 是 wrapper 路径，不是我们的脚本 |
+| 18:30 | 测试绕过 isMain | 暂时删除 isMain 检查 → app 在 PM2 下 stay alive → 确认是 isMain 问题 |
+| 18:35 | 发现 SIGINT restart loop | 即使 main 跑起来，PM2 SIGINT readiness probe 被 graceful shutdown handler 捕获 → `process.exit(0)` → restart → 再次 SIGINT → restart loop |
+| 18:40 | PM2 env detection | 用 `process.env.PM2_HOME` / `pm_id` / `pm2_env` 检测 PM2（PM2 在每个 child fork 上设置这些） |
+| 18:45 | 完整 fix: isMain + SIGINT skip | `isMain = isUnderPm2 \|\| 原检查`；PM2 下完全跳过 SIGINT/SIGTERM handlers（PM2 有自己的 signal handling） |
+| 18:50 | 验证 fix | `pm2 status`: PID 21552, 119s uptime, ↺=0, online |
+| 18:55 | 验证 chokidar fire | 复制 test PDF 到 WATCH_DIR → memory spike 54→245mb → OCR pipeline 触发 |
+| 19:00 | typecheck + 29 tests | `npm run typecheck` clean, 29/29 tests pass |
+| 19:05 | 清理 debug artifacts | `pm2 delete all` + 删 `test-pm2-watch.pdf` / `.txt` / `debug-pm2-detection.json` |
+| 19:10 | **Commit `6a79f45`** | `fix(pm2): detect PM2 + treat it as 'main' so chokidar can fire under PM2` (1 file, +31/-7) |
 
 ## Day 24 用户反馈 prompt 样例 (User Feedback Prompts Day 24)
 
@@ -158,29 +170,48 @@
 
 **关键学习：** PowerShell Execution Policy is a separate concern from PM2 itself. PowerShell blocks `.ps1` by default; bash uses `.cmd` (works around this). Setting `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser` would allow .ps1 to run.
 
+### 用户反馈 6 (HH:MM ~18:15)："tại sao khi start bằng pm2 thì không thể watch file"
+
+**完整原文：**
+> "tại sao khi start bằng pm2 thì không thể watch file"
+
+**处理方式：** 用户反馈 PM2 启动后 chokidar 没有 fire watch 事件。我之前错误地下了 "PM2 on Win irreconcilable → 切到 Task Scheduler" 的结论（commit 85dcd7d）。这次重新调查发现两个叠加 bug：
+1. `isMain` 检查 `import.meta.url === argv[1]` 在 PM2 下返回 false — 因为 PM2 用 `ProcessContainerFork.js` wrapper 启动 app，argv[1] 是 wrapper 路径不是我们的脚本
+2. 即使 main 跑起来，PM2 SIGINT readiness probe 被 graceful shutdown handler 捕获 → `process.exit(0)` → restart → 再次 SIGINT → restart loop
+
+**修复方案：**
+- 用 env vars 检测 PM2（`PM2_HOME` / `pm_id` / `pm2_env`）
+- `isMain = isUnderPm2 || 原检查` — PM2 case 也算 main
+- PM2 下完全跳过 SIGINT/SIGTERM handlers（PM2 有自己的 signal handling）
+
+**验证：** `pm2 status` → PID 21552, 119s uptime, ↺=0, online。复制 test PDF 到 WATCH_DIR → memory 54→245mb spike → OCR pipeline 触发。`npm run typecheck` clean + 29/29 tests pass。
+
+**关键学习：** 我之前太快放弃 PM2（commit 85dcd7d 时错误判断 "PM2 7.x on Win irreconcilable"）。实际上 fix 是简单的，只是需要正确诊断两层 bug 而不是一个。Lesson: 当用户说 "PM2 不工作" 时不要立即切换方案 — 先彻底排查 root cause。Task Scheduler + .bat 仍是有效的 Win-native fallback，但 PM2 才是 primary path。
+
 ## Day 24 总统计
 
-- **6 用户反馈 prompt** (initial + "dev" typo + clarification + "install pm2" + ESM error + auto-run question + Day stats request)
+- **7 用户反馈 prompt** (initial + "dev" typo + clarification + "install pm2" + ESM error + auto-run question + Day stats request + "PM2 watch not working" question)
 - **0 subagent 派发** — pure direct work
-- **2 commits**: 25eb7a7 + 85dcd7d
-- **Key finding**: PM2 7.x trên Windows có irreconcilable stdio issues (SIGINT probe + no stdout capture) → fall back to Task Scheduler + batch file
-- **Files changed**: `ecosystem.config.js` → `.cjs`, `package.json` (+12 lines), `scripts/start-watch-service.bat` (new, 60 lines), `.gitignore` (+1 line)
+- **3 commits**: 25eb7a7 + 85dcd7d + 6a79f45
+- **Key finding**: PM2 7.x 在 Windows 上 **能 work** — bug 是 `isMain` check + SIGINT restart loop（双重叠加）。Fix: PM2 env detection + isMain include PM2 case + skip signal handlers under PM2。Task Scheduler + .bat 仍是 Win-native fallback 但不是 primary
+- **Files changed**: `ecosystem.config.js` → `.cjs`, `package.json` (+12 lines), `scripts/start-watch-service.bat` (new, 47 lines), `.gitignore` (+1 line), `src/index.ts` (+31/-7 lines for PM2 fix)
 
 ## Cross-day Observations Day 23-24
 
-1. **Day 23 was pure Q&A** (Node version compatibility), **Day 24 was pure code** (PM2 ecosystem + Windows service) — both were "infrastructure" days, no feature work.
+1. **Day 23 was pure Q&A** (Node version compatibility), **Day 24 was pure code** (PM2 ecosystem + Windows service + PM2 fix) — both were "infrastructure" days, no feature work.
 2. **Day 23→24 transition**: User upgraded Node? Earlier Day 23 mentioned "tôi đang trên win 7" + Node 12; Day 24 we have Node v22.22.3 + modern PM2 7.x. So user did upgrade.
-3. **PM2 on Windows quirks**: 3 separate problems — ESM/CJS conflict (fixed with .cjs), SIGINT restart loop (worked around with Task Scheduler), stdout not captured (worked around with batch file redirect). None are blockers, but together they make PM2 unreliable on Win.
+3. **PM2 on Windows**: 1 ESM/CJS conflict (.cjs fixes it) + 1 detection bug (env vars) + 1 signal handling bug (skip SIGINT/SIGTERM under PM2). All three have clean fixes. Don't give up on PM2 too early — `~/.pm2/logs/` + env-var detection + isMain awareness are the three keys.
 4. **The "dev" message** was the most ambiguous user message — interpretation as "add dev mode to ecosystem" was reasonable but wrong. User clarification pattern is to enumerate explicitly what to skip.
 5. **Commit messages got more detailed**: Day 24 commits have longer explanatory bodies (3-4 paragraphs each) vs earlier Day 21-22 commits. This documents the PM2/Windows quirks for future reference.
+6. **Premature conclusion mistake (mea culpa)**: Commit 85dcd7d prematurely claimed "PM2 7.x on Win irreconcilable → fall back to Task Scheduler". The user implicitly rebutted by asking "tại sao khi start bằng pm2 thì không thể watch file" — which exposed that the real root cause hadn't been found. Lesson: when "X doesn't work", exhaust root-cause analysis before pivoting to alternatives.
 
 ## Overall Project Statistics (Day 16-24, 9 days)
 
 - **179 subagent prompts** (Day 16-22, all from initial 27-task implementation + refactor)
-- **6 user feedback prompts Day 24** + 19 Day 23 = **25 user feedback prompts total**
-- **204 total prompts** across **9 days** (2026-07-16 to 2026-08-11)
-- **Day 24 was unique**: 0 subagent dispatches (all direct), but produced 2 production commits. This shows the user is comfortable with the project structure and trusts the AI to handle infrastructure work directly.
-- **Windows compatibility journey**: Day 23 explored Node version workarounds (Node 12/14/10 + KB976932); Day 24 settled on modern Node (v22.22.3) + Task Scheduler instead of fighting PM2.
+- **7 user feedback prompts Day 24** + 19 Day 23 = **26 user feedback prompts total**
+- **205 total prompts** across **9 days** (2026-07-16 to 2026-08-11)
+- **Day 24 was unique**: 0 subagent dispatches (all direct), but produced 3 production commits. This shows the user is comfortable with the project structure and trusts the AI to handle infrastructure work directly.
+- **Windows compatibility journey**: Day 23 explored Node version workarounds (Node 12/14/10 + KB976932); Day 24 settled on modern Node (v22.22.3) + PM2 (primary) + Task Scheduler fallback.
 
 # 提示统计文档 (提示记录)
 **日期 (Date)**: 2026年7月23日 (2026-07-23)
