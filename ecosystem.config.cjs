@@ -58,8 +58,11 @@
 //     Watching dist/ with PM2 would cause pointless restarts on every rebuild.
 //   • A single fork instance is enough: the watcher uses an in-memory serial
 //     queue, so multiple workers on the same folder would just duplicate work.
-//   • Logs land in ./logs/ (git-ignored). PM2 itself also writes to
-//     ~/.pm2/logs/ on Linux/macOS for fallback.
+//   • No `out_file` / `error_file` are set — PM2 uses its default location
+//     (typically ~/.pm2/logs/) and you view logs in the terminal with
+//     `pm2 logs watch-file-server`. If you want the project directory
+//     clutter-free, this is the way; if you'd rather pin logs to disk, add
+//     `out_file: 'logs/out.log'` + `error_file: 'logs/error.log'` here.
 //
 // Windows-specific note:
 //   On Windows there is no `pm2 startup` — instead use the pm2-windows-startup
@@ -86,11 +89,9 @@ module.exports = {
       // PM2 must NOT watch files (chokidar does that).
       watch: false,
 
-      // PM2-managed log files (separate from your pino → stdout logger).
-      out_file: 'logs/out.log',
-      error_file: 'logs/error.log',
-      merge_logs: true,
-      log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+      // No `out_file` / `error_file` — logs land in PM2's default location
+      // (~/.pm2/logs/ on most platforms). View them live with:
+      //     pm2 logs watch-file-server
 
       // Minimal env. Everything else lives in .env (loaded by dotenv inside the app).
       env: {

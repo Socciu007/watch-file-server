@@ -20,30 +20,27 @@ REM       /tr "E:\projectVN\watch-file-server\scripts\start-watch-service.bat" ^
 REM       /sc onstart /ru SYSTEM /rl HIGHEST /f
 REM
 REM Logs:
-REM   * This wrapper writes to logs\service-stdout.log (relative to project).
-REM   * The watcher itself writes to logs\out.log via its PM2 config (when
-REM     started via PM2) OR to stdout when started directly — both paths
-REM     land here because we redirect.
+REM   * All output goes to the terminal where this .bat is running. When run
+REM     directly, you'll see the watcher's logs stream in real time.
+REM   * When run as a Task Scheduler service (no terminal), output has nowhere
+REM     to go — pipe to a file if you want persistence:
+REM         schtasks ... /tr "cmd /c ...start-watch-service.bat > logs\svc.log 2>&1"
 REM ============================================================================
 
 setlocal
 cd /d "%~dp0\.."
 
-set "LOG_DIR=%cd%\logs"
-if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
-set "LOG_FILE=%LOG_DIR%\service-stdout.log"
-
 :loop
-echo [%DATE% %TIME%] Starting watch-file-server... >> "%LOG_FILE%"
-call :run_node >> "%LOG_FILE%" 2>&1
+echo [%DATE% %TIME%] Starting watch-file-server...
+call :run_node
 set "EXIT_CODE=%errorlevel%"
-echo [%DATE% %TIME%] Exited with code %EXIT_CODE%, restarting in 5s... >> "%LOG_FILE%"
+echo [%DATE% %TIME%] Exited with code %EXIT_CODE%, restarting in 5s...
 timeout /t 5 /nobreak >nul
 goto loop
 
 REM ---------------------------------------------------------------------------
-REM Actual node invocation. Kept in a subroutine so the redirect in `:loop`
-REM captures both stdout and stderr of node itself.
+REM Actual node invocation. Kept in a subroutine so the calling `call` returns
+REM the exit code (via errorlevel) without inheriting `goto` flow control.
 REM ---------------------------------------------------------------------------
 :run_node
 node dist\index.js
