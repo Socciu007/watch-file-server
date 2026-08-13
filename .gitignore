@@ -1,7 +1,7 @@
 node_modules/
 dist/
 logs/
-# .env
+.env
 storage/processed/*
 !storage/processed/.gitkeep
 storage/failed/*
