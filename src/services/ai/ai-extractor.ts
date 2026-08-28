@@ -7,7 +7,7 @@ import axios from 'axios';
 
 const AI_API_URL = 'http://ai.dadaex.cn/backapi/chatGpt/chatAll';
 const AI_MODEL_TYPE = '2'; // 1: gpt-4o, 2: gemini-3.5-flash
-const AI_MODE_NAME = 'gemini-3.5-flash'; // gemini-3.5-flash, gpt-4o
+const AI_MODE_NAME = 'gemini-2.5-flash-lite'; // gemini-3.5-flash, gpt-4o
 
 export interface AiExtractor {
   aiExtractFields(ocrText: string): Promise<Record<string, unknown>>;

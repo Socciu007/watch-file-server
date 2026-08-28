@@ -110,7 +110,7 @@ export function startDownloadsWatcher(
         logger.error({ file: filePath, message: msg }, 'AI extract failed:');
         await mail.send({
           subject: `[FILE] ${baseName}`,
-          text: `AI extract failed for ${filePath}: ${msg}\n\nOCR preview:\n${ocrText.slice(0, 500)}`,
+          text: `AI extract failed for ${filePath}: ${msg}\n\nOCR preview:\n${ocrText}`,
           to: mailTo,
         });
         return;
