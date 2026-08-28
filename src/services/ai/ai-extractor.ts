@@ -14,47 +14,93 @@ export interface AiExtractor {
 }
 
 /**
- * Force model to return valid JSON — find the first JSON block in the string
- * (even if the model includes markdown ```json ... ``` or extra text).
+ * Repair common JSON malformations that AI models tend to produce. Only safe
+ * transformations are applied — anything ambiguous (e.g. apostrophes inside
+ * strings, JS-style comments, non-identifier keys) is left alone, because a
+ * false repair is worse than a clean error.
+ *
+ *   Unquoted keys   : {key: "v"}        → {"key": "v"}
+ *   Trailing commas : {"a": 1,}         → {"a": 1}
+ */
+function sanitizeJson(text: string): string {
+  return text
+    // Quote identifier-like keys that follow `{` or `,` and end at `:`.
+    .replace(/([{,]\s*)([a-zA-Z_$][a-zA-Z0-9_$]*)(\s*:)/g, '$1"$2"$3')
+    // Drop trailing commas before `}` or `]`.
+    .replace(/,(\s*[}\]])/g, '$1');
+}
+
+/**
+ * Try to parse a candidate, falling back to the sanitized form. Returns null
+ * if both attempts fail so the caller can try the next candidate.
+ */
+function tryParseJson(candidate: string): Record<string, unknown> | null {
+  try {
+    return JSON.parse(candidate);
+  } catch {
+    const sanitized = sanitizeJson(candidate);
+    if (sanitized !== candidate) {
+      try {
+        return JSON.parse(sanitized);
+      } catch {
+        /* fall through */
+      }
+    }
+    return null;
+  }
+}
+
+/**
+ * Force model to return valid JSON — find a JSON block in the string (even
+ * if the model includes markdown ```json ... ``` or extra text around it)
+ * and parse it. Falls back to a sanitizer for common AI malformations
+ * (unquoted keys, trailing commas). Throws if nothing parses.
  */
 export function extractJson(text: string): Record<string, unknown> {
   if (!text) throw new Error('AI returned empty response');
 
-  // Try to parse directly first
-  try {
-    return JSON.parse(text);
-  } catch {
-    /* fall through */
-  }
+  // Strategy 1: parse the whole text as-is.
+  let parsed = tryParseJson(text);
+  if (parsed) return parsed;
 
-  // Look for a JSON block wrapped in ```json ... ``` (or any ```...```)
+  // Strategy 2: extract from a ```json ... ``` (or any ```...```) fence.
   const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
   if (fenceMatch) {
-    try {
-      return JSON.parse(fenceMatch[1]!.trim());
-    } catch {
-      /* fall through */
-    }
+    parsed = tryParseJson(fenceMatch[1]!.trim());
+    if (parsed) return parsed;
   }
 
-  // Fallback: scan for the first balanced { ... } block
-  const start = text.indexOf('{');
-  if (start >= 0) {
+  // Strategy 3: walk the text, trying each balanced `{ ... }` block. If the
+  // first block doesn't parse we move on to the next — the model sometimes
+  // emits a stray `{` in prose before the real answer.
+  let cursor = 0;
+  while (cursor < text.length) {
+    const start = text.indexOf('{', cursor);
+    if (start < 0) break;
+
     let depth = 0;
-    for (let i = start; i < text.length; i++) {
-      const ch = text[i];
+    let end = -1;
+    for (let j = start; j < text.length; j++) {
+      const ch = text[j];
       if (ch === '{') depth++;
       else if (ch === '}') {
         depth--;
         if (depth === 0) {
-          try {
-            return JSON.parse(text.slice(start, i + 1));
-          } catch {
-            break;
-          }
+          end = j;
+          break;
         }
       }
     }
+    if (end < 0) {
+      // No closing brace balances this `{` — could be a stray `{` in prose.
+      // Skip it and try the next one rather than giving up entirely.
+      cursor = start + 1;
+      continue;
+    }
+
+    parsed = tryParseJson(text.slice(start, end + 1));
+    if (parsed) return parsed;
+    cursor = end + 1; // Move past this block and try the next one.
   }
 
   throw new Error(`Cannot parse JSON from response: ${text.slice(0, 200)}`);

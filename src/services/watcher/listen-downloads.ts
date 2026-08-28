@@ -12,7 +12,7 @@ import FormData from 'form-data';
 
 const logger = createLogger('info').child({ component: 'listen-downloads' });
 const WATCH_DIR = process.env.WATCH_DIR || '';
-const AI_PROMPT = '. Hãy lấy thông tin số B\\L No và trả về dạng {blNo: string}.';
+const AI_PROMPT = '. Nếu có thông tin số S\\0 thì lấy số đó làm số blNo, nếu không có S\\O lấy thông tin số B\\L No（bill of lading no.）trong văn bản và trả về dạng {blNo: string}.';
 const API_URL = process.env.API_URL || '';
 const MAIL_API_URL = process.env.MAIL_API_URL || 'https://vn2.dadaex.cn/api/moneyapi/mail';
 const MAIL_TO = process.env.MAIL_TO || '904288354@qq.com';
