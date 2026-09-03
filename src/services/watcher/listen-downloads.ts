@@ -91,6 +91,7 @@ export function startDownloadsWatcher(
       let ocrText = '';
       try {
         ocrText = await ocrByKind(filePath, kind, ocr);
+        console.log(`ocrText: ${ocrText}`);
       } catch (ocrErr: unknown) {
         const msg = ocrErr instanceof Error ? ocrErr.message : String(ocrErr);
         logger.error({ file: filePath, message: msg }, 'OCR failed:');
@@ -105,6 +106,7 @@ export function startDownloadsWatcher(
       let aiResult: Record<string, unknown> | null = null;
       try {
         aiResult = await aiExtractFields(ocrText + AI_PROMPT);
+        console.log(`aiResult: ${JSON.stringify(aiResult)}`);
       } catch (aiErr: unknown) {
         const msg = aiErr instanceof Error ? aiErr.message : String(aiErr);
         logger.error({ file: filePath, message: msg }, 'AI extract failed:');
