@@ -90,7 +90,7 @@ describe('TesseractOcrProcessor', () => {
     const proc = new TesseractOcrProcessor();
     const result = await proc.processPdf('/x/invoice.pdf');
 
-    expect(fakePdfToImg.pdf).toHaveBeenCalledWith('/x/invoice.pdf', { scale: 3.0 });
+    expect(fakePdfToImg.pdf).toHaveBeenCalledWith('/x/invoice.pdf', { scale: 4.0 });
     expect(result).toContain('--- Trang 1 ---');
     expect(result).toContain('--- Trang 2 ---');
     expect(result).toContain('OCR:buffer'); // both pages OCR'd as Buffer

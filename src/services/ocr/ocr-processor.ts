@@ -110,11 +110,13 @@ export class TesseractOcrProcessor implements OcrProcessor {
     // pdf-to-img is pure ESM; load it dynamically.
     const { pdf: pdfToImg } = await loadPdfToImg();
 
-    // A4 PDF at scale 3.0 ≈ 216 DPI — sharp enough for Tesseract to read
-    // 8–10pt shipping labels (B/L No, container No) reliably. Going to 4.0
-    // (~288 DPI) doubles render time and memory for diminishing returns;
-    // Tesseract's LSTM tops out around 300 DPI equivalent.
-    const doc = await pdfToImg(filePath, { scale: 3.0 });
+    // A4 PDF at scale 4.0 ≈ 288 DPI — sharp enough for Tesseract to read the
+    // 8–10pt B/L-No boxes that sit in the corner of carrier B/L forms
+    // (SITC, OOCL, ONE, …). At 216 DPI these get OCR'd as gibberish like
+    // 'srostcazrous' for the real value 'SITGSHCBZR0048'. 288 DPI is
+    // Tesseract's LSTM sweet spot; going higher (5.0 / 360 DPI) doubles
+    // render time + memory for no further accuracy gain on these forms.
+    const doc = await pdfToImg(filePath, { scale: 4.0 });
 
     const worker = await createWorker(this.lang, this.tesseractOverride);
     try {
