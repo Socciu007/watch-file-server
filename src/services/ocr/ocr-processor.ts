@@ -1,5 +1,4 @@
 import path from 'node:path';
-import { readFile } from 'node:fs/promises';
 import { createLogger } from '../../lib/logger.js';
 
 const logger = createLogger('info').child({ component: 'tesseract-processor' });
@@ -15,17 +14,15 @@ export interface OcrProcessor {
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Module-level refs to native deps — isolated so tests can mock them.
-//  tesseract.js, pdf-to-img, pdf-parse, and mammoth are all ESM; we import
-//  lazily where we need them so the test suite can swap them via vi.mock().
+//  tesseract.js, pdf-to-img, and mammoth are all ESM; we import lazily where
+//  we need them so the test suite can swap them via vi.mock().
 // ─────────────────────────────────────────────────────────────────────────────
 type TesseractModule = typeof import('tesseract.js');
 type PdfToImgModule = typeof import('pdf-to-img');
-type PdfParseModule = typeof import('pdf-parse');
 type MammothModule = typeof import('mammoth');
 
 let _tesseract: TesseractModule | undefined;
 let _pdfToImg: PdfToImgModule | undefined;
-let _pdfParse: PdfParseModule | undefined;
 let _mammoth: MammothModule | undefined;
 
 async function loadTesseract(): Promise<TesseractModule> {
@@ -35,10 +32,6 @@ async function loadTesseract(): Promise<TesseractModule> {
 async function loadPdfToImg(): Promise<PdfToImgModule> {
   if (!_pdfToImg) _pdfToImg = await import('pdf-to-img');
   return _pdfToImg;
-}
-async function loadPdfParse(): Promise<PdfParseModule> {
-  if (!_pdfParse) _pdfParse = await import('pdf-parse');
-  return _pdfParse;
 }
 async function loadMammoth(): Promise<MammothModule> {
   if (!_mammoth) _mammoth = await import('mammoth');
@@ -53,20 +46,10 @@ export const _deps = {
   setPdfToImg(m: PdfToImgModule | undefined) {
     _pdfToImg = m;
   },
-  setPdfParse(m: PdfParseModule | undefined) {
-    _pdfParse = m;
-  },
   setMammoth(m: MammothModule | undefined) {
     _mammoth = m;
   },
 };
-
-// Short text from pdf-parse usually means "the PDF has no text layer" —
-// i.e. it's a scanned image rendered as PDF. Below this threshold we fall
-// back to Tesseract. 20 chars is conservative: even a single-line label
-// PDF has ≥ 5 chars of real text, and any "valid" PDF carrier form (B/L,
-// invoice, packing list) has hundreds.
-const MIN_PDF_PARSE_TEXT_LENGTH = 20;
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Worker factory
@@ -102,19 +85,15 @@ export interface TesseractOcrProcessorOptions {
   lang?: string;
   /** Override for testing — provide a custom tesseract module (e.g. mock). */
   tesseract?: TesseractModule;
-  /** Override for testing — provide a custom pdf-parse module (e.g. mock). */
-  pdfParse?: PdfParseModule;
 }
 
 export class TesseractOcrProcessor implements OcrProcessor {
   private readonly lang: string;
   private readonly tesseractOverride: TesseractModule | undefined;
-  private readonly pdfParseOverride: PdfParseModule | undefined;
 
   constructor(opts: TesseractOcrProcessorOptions = {}) {
     this.lang = opts.lang ?? 'eng';
     this.tesseractOverride = opts.tesseract;
-    this.pdfParseOverride = opts.pdfParse;
   }
 
   async processImage(filePath: string): Promise<string> {
@@ -128,36 +107,16 @@ export class TesseractOcrProcessor implements OcrProcessor {
   }
 
   async processPdf(filePath: string): Promise<string> {
-    // 1. Try pdf-parse first — extracts the embedded text layer directly.
-    //    Much faster + perfectly accurate for text-based PDFs (which is
-    //    most carrier B/L forms: they're generated from a template and
-    //    have real text behind the visual layout). If this returns
-    //    meaningful text we skip Tesseract entirely.
-    const pdfParse = this.pdfParseOverride ?? (await loadPdfParse());
-    try {
-      const buffer = await readFile(filePath);
-      const parser = new pdfParse.PDFParse({ data: buffer });
-      let parsedText = '';
-      try {
-        const result = await parser.getText();
-        parsedText = (result.text ?? '').trim();
-      } finally {
-        await parser.destroy();
-      }
-      if (parsedText.length >= MIN_PDF_PARSE_TEXT_LENGTH) {
-        return parsedText;
-      }
-      // text too short → likely a scanned PDF with no text layer;
-      // fall through to Tesseract OCR.
-    } catch {
-      // pdf-parse threw (corrupt PDF, unsupported encoding, etc.) —
-      // fall through to Tesseract rather than failing the whole upload.
-    }
-
-    // 2. Fallback: render each page to an image and OCR with Tesseract.
-    //    Required for scanned PDFs and image-only PDFs.
+    // pdf-to-img is pure ESM; load it dynamically.
     const { pdf: pdfToImg } = await loadPdfToImg();
-    const doc = await pdfToImg(filePath, { scale: 2.5 });
+
+    // A4 PDF at scale 4.0 ≈ 288 DPI — sharp enough for Tesseract to read the
+    // 8–10pt B/L-No boxes that sit in the corner of carrier B/L forms
+    // (SITC, OOCL, ONE, …). At 216 DPI these get OCR'd as gibberish like
+    // 'srostcazrous' for the real value 'SITGSHCBZR0048'. 288 DPI is
+    // Tesseract's LSTM sweet spot; going higher (5.0 / 360 DPI) doubles
+    // render time + memory for no further accuracy gain on these forms.
+    const doc = await pdfToImg(filePath, { scale: 4.0 });
 
     const worker = await createWorker(this.lang, this.tesseractOverride);
     try {
