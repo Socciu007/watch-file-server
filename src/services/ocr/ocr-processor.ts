@@ -116,7 +116,7 @@ export class TesseractOcrProcessor implements OcrProcessor {
     // 'srostcazrous' for the real value 'SITGSHCBZR0048'. 288 DPI is
     // Tesseract's LSTM sweet spot; going higher (5.0 / 360 DPI) doubles
     // render time + memory for no further accuracy gain on these forms.
-    const doc = await pdfToImg(filePath, { scale: 4.0 });
+    const doc = await pdfToImg(filePath, { scale: 6 });
 
     const worker = await createWorker(this.lang, this.tesseractOverride);
     try {

@@ -12,7 +12,7 @@ import FormData from 'form-data';
 
 const logger = createLogger('info').child({ component: 'listen-downloads' });
 const WATCH_DIR = process.env.WATCH_DIR || '';
-const AI_PROMPT = '. Nếu có thông tin số S\\0 thì lấy số đó làm số blNo, nếu không có S\\O lấy thông tin số B\\L No（bill of lading no.）trong văn bản và trả về dạng {blNo: string}.';
+const AI_PROMPT = '. Lấy thông tin số S\\0 (nếu có) và thông tin số B\\L No（bill of lading no.）trong văn bản và trả về dạng {blNo: string, SO: string}.';
 const API_URL = process.env.API_URL || '';
 const MAIL_API_URL = process.env.MAIL_API_URL || 'https://vn2.dadaex.cn/api/moneyapi/mail';
 const MAIL_TO = process.env.MAIL_TO || '904288354@qq.com';
@@ -120,7 +120,7 @@ export function startDownloadsWatcher(
 
       let upload: { status: number; body: UploadResponse } | null = null;
       let uploadError: string | null = null;
-      const blNo = typeof aiResult?.blNo === 'string' ? (aiResult.blNo as string) : '';
+      const blNo = aiResult?.SO ? (aiResult.SO as string) : (aiResult?.blNo as string) || '';
       if (blNo) {
         try {
           upload = await uploadToEb(apiUpload, filePath, blNo);
