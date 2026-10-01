@@ -75,8 +75,6 @@ export function startDownloadsWatcher(
   const watchDir = opts.watchDir ?? WATCH_DIR;
   const mailTo = opts.mailTo ?? MAIL_TO;
   const mail: MailService = opts.mail ?? new HttpMailService({ apiUrl: MAIL_API_URL });
-  // Firecrawl fast-path for text-layer PDFs. Enable by default when a key is
-  // configured; explicit `null` in opts force-disables (handy for tests).
   const firecrawlForPdf =
     opts.firecrawl === null
       ? null

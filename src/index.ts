@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { startDownloadsWatcher } from './services/watcher/listen-downloads.js';
+import { parsePdf } from './services/firecrawl/firecrawl-service.js';
 
 // PM2 sets a handful of env vars on every child it forks. Detect them so we
 // can adapt behaviour to whichever runtime we're under.
@@ -20,7 +21,7 @@ const isMain =
   import.meta.url === `file:///${process.argv[1]?.replace(/\\/g, '/')}`;
 
 if (isMain) {
-  const watcher = startDownloadsWatcher();
+  const watcher = startDownloadsWatcher({ firecrawl: parsePdf });
 
   // PM2 7.x on Windows sends SIGINT as a "readiness probe" a few seconds
   // after start. Our graceful-exit handler would turn that probe into a
