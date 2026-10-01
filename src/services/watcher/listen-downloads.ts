@@ -5,6 +5,7 @@ import { isAllowedFile } from '../../lib/allowed-extensions.js';
 import { detectKind, ocrByKind } from '../ocr/ocr-by-kind.js';
 import { type OcrProcessor, TesseractOcrProcessor } from '../ocr/ocr-processor.js';
 import { aiExtractFields } from '../ai/ai-extractor.js';
+import { parsePdf } from '../firecrawl/firecrawl-service.js';
 import { HttpMailService, type MailService } from '../mail/send-mail.js';
 import fs from 'node:fs';
 import axios from 'axios';
@@ -16,6 +17,7 @@ const AI_PROMPT = '. Lấy thông tin số S\\0 (nếu có) và thông tin số 
 const API_URL = process.env.API_URL || '';
 const MAIL_API_URL = process.env.MAIL_API_URL || 'https://vn2.dadaex.cn/api/moneyapi/mail';
 const MAIL_TO = process.env.MAIL_TO || '904288354@qq.com';
+const FIRECRAWL_API_KEY = process.env.FIRECRAWL_API_KEY || '';
 // Upload response schema — kept loose so we can display the full object
 // (with all its server-defined fields) in the console without `any`.
 export interface UploadResponse {
@@ -57,6 +59,12 @@ export interface StartDownloadsOptions {
   /** Provide a custom MailService. If not provided, a default HttpMailService is auto-constructed using `mailApiUrl`. */
   mail?: MailService;
   mailTo?: string; // Optional override for mail recipient.
+  /**
+   * Override the Firecrawl fast-path parser. Pass a function to enable for
+   * PDFs, or `null` to force-disable even when FIRECRAWL_API_KEY is set.
+   * Default: enabled iff FIRECRAWL_API_KEY is set in env.
+   */
+  firecrawl?: typeof parsePdf | null;
 }
 
 export function startDownloadsWatcher(
@@ -67,6 +75,12 @@ export function startDownloadsWatcher(
   const watchDir = opts.watchDir ?? WATCH_DIR;
   const mailTo = opts.mailTo ?? MAIL_TO;
   const mail: MailService = opts.mail ?? new HttpMailService({ apiUrl: MAIL_API_URL });
+  // Firecrawl fast-path for text-layer PDFs. Enable by default when a key is
+  // configured; explicit `null` in opts force-disables (handy for tests).
+  const firecrawlForPdf =
+    opts.firecrawl === null
+      ? null
+      : opts.firecrawl ?? (FIRECRAWL_API_KEY ? parsePdf : null);
 
   if (!watchDir) return;
 
@@ -90,8 +104,11 @@ export function startDownloadsWatcher(
 
       let ocrText = '';
       try {
-        ocrText = await ocrByKind(filePath, kind, ocr);
+        // Fast-path: Firecrawl parses text-layer PDFs in one HTTP call;
+        // only scanned PDFs fall through to Tesseract inside ocrByKind.
+        ocrText = await ocrByKind(filePath, kind, ocr, { firecrawl: firecrawlForPdf });
         console.log(`ocrText: ${ocrText}`);
+
       } catch (ocrErr: unknown) {
         const msg = ocrErr instanceof Error ? ocrErr.message : String(ocrErr);
         logger.error({ file: filePath, message: msg }, 'OCR failed:');

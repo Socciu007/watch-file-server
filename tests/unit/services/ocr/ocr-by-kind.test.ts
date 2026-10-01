@@ -51,4 +51,48 @@ describe('ocrByKind', () => {
     } as unknown as OcrProcessor;
     await expect(ocrByKind('/x.png', 'image', ocr)).rejects.toThrow('OCR crashed');
   });
+
+  // ── Firecrawl fast-path ─────────────────────────────────────────────────
+  it('PDF: Firecrawl fast-path returns markdown when long enough', async () => {
+    const ocr = { processImage: vi.fn(), processPdf: vi.fn(), processDocx: vi.fn() } as unknown as OcrProcessor;
+    const firecrawl = vi.fn().mockResolvedValue(
+      '# Bill of Lading\nSITGSHCBZR0048\nContainer: ABCD1234567',
+    );
+    const result = await ocrByKind('/x.pdf', 'pdf', ocr, { firecrawl });
+    expect(result).toContain('SITGSHCBZR0048');
+    expect(firecrawl).toHaveBeenCalledWith('/x.pdf');
+    expect((ocr as any).processPdf).not.toHaveBeenCalled();
+  });
+
+  it('PDF: falls back to OCR when Firecrawl returns < 20 chars', async () => {
+    const ocr = { processImage: vi.fn(), processPdf: vi.fn().mockResolvedValue('OCR_PDF'), processDocx: vi.fn() } as unknown as OcrProcessor;
+    const firecrawl = vi.fn().mockResolvedValue(''); // scanned PDF
+    const result = await ocrByKind('/x.pdf', 'pdf', ocr, { firecrawl });
+    expect(result).toBe('OCR_PDF');
+    expect(firecrawl).toHaveBeenCalled();
+    expect((ocr as any).processPdf).toHaveBeenCalledWith('/x.pdf');
+  });
+
+  it('PDF: falls back to OCR when Firecrawl throws', async () => {
+    const ocr = { processImage: vi.fn(), processPdf: vi.fn().mockResolvedValue('OCR_PDF'), processDocx: vi.fn() } as unknown as OcrProcessor;
+    const firecrawl = vi.fn().mockRejectedValue(new Error('Firecrawl 500'));
+    const result = await ocrByKind('/x.pdf', 'pdf', ocr, { firecrawl });
+    expect(result).toBe('OCR_PDF');
+    expect((ocr as any).processPdf).toHaveBeenCalledWith('/x.pdf');
+  });
+
+  it('PDF: force-disabled when firecrawl: null', async () => {
+    const ocr = { processImage: vi.fn(), processPdf: vi.fn().mockResolvedValue('OCR_PDF'), processDocx: vi.fn() } as unknown as OcrProcessor;
+    const result = await ocrByKind('/x.pdf', 'pdf', ocr, { firecrawl: null });
+    expect(result).toBe('OCR_PDF');
+    expect((ocr as any).processPdf).toHaveBeenCalledWith('/x.pdf');
+  });
+
+  it('non-PDF kinds ignore the firecrawl option entirely', async () => {
+    const ocr = { processImage: vi.fn().mockResolvedValue('IMG'), processPdf: vi.fn(), processDocx: vi.fn().mockResolvedValue('DOCX') } as unknown as OcrProcessor;
+    const firecrawl = vi.fn();
+    await ocrByKind('/x.png', 'image', ocr, { firecrawl });
+    await ocrByKind('/x.docx', 'docx', ocr, { firecrawl });
+    expect(firecrawl).not.toHaveBeenCalled();
+  });
 });
