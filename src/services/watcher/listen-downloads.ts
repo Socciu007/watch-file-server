@@ -13,7 +13,7 @@ import FormData from 'form-data';
 
 const logger = createLogger('info').child({ component: 'listen-downloads' });
 const WATCH_DIR = process.env.WATCH_DIR || '';
-const AI_PROMPT = '. Lấy thông tin số S\\0 (nếu có) và thông tin số B\\L No（bill of lading no.）trong văn bản và trả về dạng {blNo: string, SO: string}.';
+const AI_PROMPT = '. Lấy thông tin số S\\0 (nếu có) và thông tin số B\\L No（bill of lading no）(đã loại bỏ khoảng trắng) trong văn bản và trả về dạng {blNo: string, SO: string}.';
 const API_URL = process.env.API_URL || '';
 const MAIL_API_URL = process.env.MAIL_API_URL || 'https://vn2.dadaex.cn/api/moneyapi/mail';
 const MAIL_TO = process.env.MAIL_TO || '904288354@qq.com';
@@ -106,7 +106,6 @@ export function startDownloadsWatcher(
         // only scanned PDFs fall through to Tesseract inside ocrByKind.
         ocrText = await ocrByKind(filePath, kind, ocr, { firecrawl: firecrawlForPdf });
         console.log(`ocrText: ${ocrText}`);
-
       } catch (ocrErr: unknown) {
         const msg = ocrErr instanceof Error ? ocrErr.message : String(ocrErr);
         logger.error({ file: filePath, message: msg }, 'OCR failed:');
@@ -135,7 +134,7 @@ export function startDownloadsWatcher(
 
       let upload: { status: number; body: UploadResponse } | null = null;
       let uploadError: string | null = null;
-      const blNo = aiResult?.SO ? (aiResult.SO as string) : (aiResult?.blNo as string) || '';
+      const blNo = (typeof aiResult.SO === 'string' && aiResult.SO.slice(0, 2) === 'SX') ? aiResult.SO : (aiResult?.blNo as string) || '';
       if (blNo) {
         try {
           upload = await uploadToEb(apiUpload, filePath, blNo);
