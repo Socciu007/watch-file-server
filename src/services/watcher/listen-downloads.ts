@@ -75,10 +75,8 @@ export function startDownloadsWatcher(
   const watchDir = opts.watchDir ?? WATCH_DIR;
   const mailTo = opts.mailTo ?? MAIL_TO;
   const mail: MailService = opts.mail ?? new HttpMailService({ apiUrl: MAIL_API_URL });
-  const firecrawlForPdf =
-    opts.firecrawl === null
-      ? null
-      : opts.firecrawl ?? (FIRECRAWL_API_KEY ? parsePdf : null);
+  const firecrawlForPdf = opts.firecrawl === null
+    ? null : opts.firecrawl ?? (FIRECRAWL_API_KEY ? parsePdf : null);
 
   if (!watchDir) return;
 
